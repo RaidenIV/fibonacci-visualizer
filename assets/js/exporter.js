@@ -77,8 +77,7 @@ export class Exporter extends EventTarget {
     this.exportRenderer.setPixelRatio(1);
     this.exportRenderer.setSize(width, height, false);
     this.exportCamera = this.visualizer.camera.clone();
-    this.exportCamera.aspect = width / height;
-    this.exportCamera.updateProjectionMatrix();
+    this.visualizer.configureCameraForSize(this.exportCamera, width, height);
     this.compositeCanvas = document.createElement("canvas");
     this.compositeCanvas.width = width;
     this.compositeCanvas.height = height;
@@ -109,9 +108,8 @@ export class Exporter extends EventTarget {
     const width = this.compositeCanvas.width;
     const height = this.compositeCanvas.height;
     this.exportCamera.copy(this.visualizer.camera);
-    this.exportCamera.aspect = width / height;
-    this.exportCamera.updateProjectionMatrix();
-    this.exportRenderer.render(this.visualizer.scene, this.exportCamera);
+    this.visualizer.configureCameraForSize(this.exportCamera, width, height);
+    this.visualizer.renderWithRenderer(this.exportRenderer, this.exportCamera);
     this.compositeContext.drawImage(this.exportRenderer.domElement, 0, 0, width, height);
     if (this.state.get("showHud")) this.hud.drawToContext(this.compositeContext, width, height, metrics, meta, false);
     const elapsed = (performance.now() - this.startedAt) / 1000;
@@ -167,9 +165,8 @@ export class Exporter extends EventTarget {
     renderer.setPixelRatio(1);
     renderer.setSize(width, height, false);
     const camera = this.visualizer.camera.clone();
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
-    renderer.render(this.visualizer.scene, camera);
+    this.visualizer.configureCameraForSize(camera, width, height);
+    this.visualizer.renderWithRenderer(renderer, camera);
     const composite = document.createElement("canvas");
     composite.width = width;
     composite.height = height;

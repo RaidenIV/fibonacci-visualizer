@@ -5,35 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="A real-time, audio-reactive Fibonacci field built with Three.js." />
   <title>Fibonacci Audio Field</title>
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <div class="app-shell" id="appShell">
     <aside class="sidebar" id="sidebar" aria-label="Visualizer controls">
       <header class="sidebar__header">
-        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-        <div>
-          <p class="eyebrow">REAL-TIME GENERATIVE SYSTEM</p>
-          <h1>FIBONACCI FIELD</h1>
+        <div class="sidebar__brand-block">
+          <p class="eyebrow">REAL-TIME AUDIO VISUALIZER</p>
+          <h1>Fibonacci Audio Field</h1>
         </div>
         <button class="icon-button sidebar__close" id="closeSidebar" type="button" aria-label="Close controls">×</button>
       </header>
 
       <div class="sidebar__scroll">
         <details class="panel" open>
-          <summary><span>AUDIO SOURCE</span><strong id="audioStatus">DEMO</strong></summary>
+          <summary><span>Audio Source</span><strong id="audioStatus">DEMO</strong></summary>
           <div class="panel__body">
             <label class="file-drop" id="fileDrop" for="audioFile">
               <input id="audioFile" type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg,.opus" />
-              <span class="file-drop__icon">＋</span>
-              <span><strong id="audioFileLabel">LOAD AUDIO FILE</strong><small>Choose or drop a local track</small></span>
+              <span class="file-drop__icon" aria-hidden="true">＋</span>
+              <strong class="file-drop__title" id="audioFileLabel">Load audio file</strong>
+              <small class="file-drop__copy">Choose or drop WAV, MP3, M4A, FLAC, OGG, or OPUS</small>
             </label>
             <div class="track-card">
-              <div><span>TRACK</span><strong id="trackName">Synthetic demo signal</strong></div>
-              <div class="track-card__grid">
-                <span id="trackDuration">∞ DEMO</span>
-                <span id="trackFormat">INTERNAL</span>
-                <span id="trackSize">0 B</span>
+              <div class="track-card__art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+              <div class="track-card__meta">
+                <strong id="trackName">Synthetic demo signal</strong>
+                <span><b id="trackFormat">INTERNAL</b> · <b id="trackSize">0 B</b> · <b id="trackDuration">∞ DEMO</b></span>
               </div>
             </div>
             <div class="control">
@@ -48,23 +51,23 @@
         </details>
 
         <details class="panel" open>
-          <summary><span>FIELD GEOMETRY</span><strong>GPU</strong></summary>
+          <summary><span>Field Geometry</span><strong>GPU</strong></summary>
           <div class="panel__body">
             <div class="control">
               <div class="control__row"><label for="shape">Point Shape</label></div>
               <select id="shape"><option value="circle">Circle</option><option value="square">Square</option><option value="triangle">Triangle</option></select>
             </div>
             <div class="control">
-              <div class="control__row"><label for="pointCount">Base Points</label><output id="pointCountValue">2,400</output></div>
-              <input id="pointCount" type="range" min="100" max="8000" step="100" value="2400" />
+              <div class="control__row"><label for="pointCount">Base Points</label><output id="pointCountValue">300</output></div>
+              <input id="pointCount" type="range" min="100" max="8000" step="100" value="300" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="spacing">Spiral Spacing</label><output id="spacingValue">0.82</output></div>
-              <input id="spacing" type="range" min="0.2" max="2" step="0.01" value="0.82" />
+              <div class="control__row"><label for="spacing">Spiral Spacing</label><output id="spacingValue">1.00</output></div>
+              <input id="spacing" type="range" min="0.2" max="2" step="0.01" value="1" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="pointSize">Point Size</label><output id="pointSizeValue">2.4</output></div>
-              <input id="pointSize" type="range" min="0.5" max="12" step="0.1" value="2.4" />
+              <div class="control__row"><label for="pointSize">Point Size</label><output id="pointSizeValue">2.0</output></div>
+              <input id="pointSize" type="range" min="0.5" max="12" step="0.1" value="2" />
             </div>
             <div class="control">
               <div class="control__row"><label for="goldenAngle">Golden Angle</label><output id="goldenAngleValue">137.50°</output></div>
@@ -74,21 +77,11 @@
               <div class="control__row"><label for="warp">Radial Warp</label><output id="warpValue">0.30</output></div>
               <input id="warp" type="range" min="0" max="1.5" step="0.01" value="0.3" />
             </div>
-            <div class="control two-up">
-              <div>
-                <div class="control__row"><label for="depth">Depth</label><output id="depthValue">8.0</output></div>
-                <input id="depth" type="range" min="0" max="40" step="0.5" value="8" />
-              </div>
-              <div>
-                <div class="control__row"><label for="depthFrequency">Depth Freq.</label><output id="depthFrequencyValue">0.045</output></div>
-                <input id="depthFrequency" type="range" min="0.005" max="0.15" step="0.001" value="0.045" />
-              </div>
-            </div>
           </div>
         </details>
 
         <details class="panel" open>
-          <summary><span>AUDIO REACTIVITY</span><strong>FFT</strong></summary>
+          <summary><span>Audio Reactivity</span><strong>FFT</strong></summary>
           <div class="panel__body">
             <div class="control">
               <div class="control__row"><label for="sensitivity">Sensitivity</label><output id="sensitivityValue">1.60×</output></div>
@@ -99,34 +92,30 @@
               <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.78" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="audioScale">Scale Response</label><output id="audioScaleValue">1.15×</output></div>
-              <input id="audioScale" type="range" min="0" max="3" step="0.05" value="1.15" />
+              <div class="control__row"><label for="audioScale">Scale Response</label><output id="audioScaleValue">1.00×</output></div>
+              <input id="audioScale" type="range" min="0" max="3" step="0.05" value="1" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="audioDensity">Density Response</label><output id="audioDensityValue">70%</output></div>
-              <input id="audioDensity" type="range" min="0" max="1" step="0.01" value="0.7" />
+              <div class="control__row"><label for="audioDensity">Density Response</label><output id="audioDensityValue">100%</output></div>
+              <input id="audioDensity" type="range" min="0" max="1" step="0.01" value="1" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="audioSize">Size Response</label><output id="audioSizeValue">1.40×</output></div>
-              <input id="audioSize" type="range" min="0" max="4" step="0.05" value="1.4" />
+              <div class="control__row"><label for="audioSize">Size Response</label><output id="audioSizeValue">1.00×</output></div>
+              <input id="audioSize" type="range" min="0" max="4" step="0.05" value="1" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="audioRotation">Rotation Response</label><output id="audioRotationValue">1.25×</output></div>
-              <input id="audioRotation" type="range" min="0" max="4" step="0.05" value="1.25" />
-            </div>
-            <div class="control">
-              <div class="control__row"><label for="audioDepth">Depth Response</label><output id="audioDepthValue">1.00×</output></div>
-              <input id="audioDepth" type="range" min="0" max="4" step="0.05" value="1" />
+              <div class="control__row"><label for="audioRotation">Rotation Response</label><output id="audioRotationValue">1.00×</output></div>
+              <input id="audioRotation" type="range" min="0" max="4" step="0.05" value="1" />
             </div>
           </div>
         </details>
 
         <details class="panel" open>
-          <summary><span>MOTION &amp; COLOR</span><strong>LIVE</strong></summary>
+          <summary><span>Motion &amp; Color</span><strong>LIVE</strong></summary>
           <div class="panel__body">
             <div class="control">
-              <div class="control__row"><label for="rotationSpeed">Base Rotation</label><output id="rotationSpeedValue">0.12</output></div>
-              <input id="rotationSpeed" type="range" min="-1" max="1" step="0.01" value="0.12" />
+              <div class="control__row"><label for="rotationSpeed">Base Rotation</label><output id="rotationSpeedValue">0.00</output></div>
+              <input id="rotationSpeed" type="range" min="-1" max="1" step="0.01" value="0" />
             </div>
             <div class="control">
               <div class="control__row"><label for="palette">Palette</label></div>
@@ -135,37 +124,25 @@
               </select>
             </div>
             <div class="control">
-              <div class="control__row"><label for="colorCycle">Color Cycle</label><output id="colorCycleValue">0.06</output></div>
-              <input id="colorCycle" type="range" min="-0.5" max="0.5" step="0.01" value="0.06" />
+              <div class="control__row"><label for="colorCycle">Color Cycle</label><output id="colorCycleValue">0.00</output></div>
+              <input id="colorCycle" type="range" min="-0.5" max="0.5" step="0.01" value="0" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="opacity">Opacity</label><output id="opacityValue">92%</output></div>
-              <input id="opacity" type="range" min="0.05" max="1" step="0.01" value="0.92" />
+              <div class="control__row"><label for="opacity">Opacity</label><output id="opacityValue">100%</output></div>
+              <input id="opacity" type="range" min="0.05" max="1" step="0.01" value="1" />
             </div>
-            <label class="switch-row"><span>Additive Glow</span><input id="additive" type="checkbox" checked /><i></i></label>
+            <label class="switch-row"><span>Additive Glow</span><input id="additive" type="checkbox" /><i></i></label>
           </div>
         </details>
 
         <details class="panel">
-          <summary><span>CAMERA &amp; VIEWPORT</span><strong>3D</strong></summary>
+          <summary><span>Viewport</span><strong>2D</strong></summary>
           <div class="panel__body">
-            <div class="button-grid button-grid--4">
-              <button class="mini-button" data-camera="front" type="button">FRONT</button>
-              <button class="mini-button" data-camera="tilt" type="button">TILT</button>
-              <button class="mini-button" data-camera="iso" type="button">ISO</button>
-              <button class="mini-button" data-camera="top" type="button">TOP</button>
-            </div>
             <div class="control">
               <div class="control__row"><label for="viewportFormat">Viewport Format</label></div>
               <select id="viewportFormat"><option value="responsive">Responsive</option><option value="landscape">16:9 Landscape</option><option value="portrait">9:16 Portrait</option><option value="square">1:1 Square</option></select>
             </div>
-            <div class="control">
-              <div class="control__row"><label for="fov">Field of View</label><output id="fovValue">45°</output></div>
-              <input id="fov" type="range" min="20" max="90" step="1" value="45" />
-            </div>
             <div class="toggle-grid">
-              <label class="switch-row"><span>Auto Orbit</span><input id="autoOrbit" type="checkbox" /><i></i></label>
-              <label class="switch-row"><span>Grid</span><input id="showGrid" type="checkbox" /><i></i></label>
               <label class="switch-row"><span>HUD</span><input id="showHud" type="checkbox" checked /><i></i></label>
               <label class="switch-row"><span>Safe Area</span><input id="showSafeArea" type="checkbox" /><i></i></label>
             </div>
@@ -173,7 +150,7 @@
         </details>
 
         <details class="panel">
-          <summary><span>PERFORMANCE</span><strong id="qualityBadge">BALANCED</strong></summary>
+          <summary><span>Performance</span><strong id="qualityBadge">BALANCED</strong></summary>
           <div class="panel__body">
             <div class="control">
               <div class="control__row"><label for="quality">Quality Preset</label></div>
@@ -189,7 +166,7 @@
         </details>
 
         <details class="panel" open>
-          <summary><span>EXPORT &amp; SETTINGS</span><strong id="recordingStatus">READY</strong></summary>
+          <summary><span>Export &amp; Settings</span><strong id="recordingStatus">READY</strong></summary>
           <div class="panel__body">
             <div class="control two-up">
               <div><div class="control__row"><label for="exportResolution">Resolution</label></div><select id="exportResolution"><option value="current">Current</option><option value="1080">1920×1080</option><option value="1440">2560×1440</option><option value="2160">3840×2160</option></select></div>
@@ -240,7 +217,7 @@
           <div class="drop-overlay" id="dropOverlay">
             <div class="drop-overlay__target"><span>＋</span><strong>DROP AUDIO TO LOAD</strong><small>Local processing only</small></div>
           </div>
-          <div class="corner-label corner-label--tl"><span>SYS</span><strong>PHYLLOTAXIS // 01</strong></div>
+          <div class="corner-label corner-label--tl"><span>SYS</span><strong>PYTHON 2D // PHYLLOTAXIS</strong></div>
           <div class="corner-label corner-label--tr"><span id="fpsReadout">60 FPS</span><strong id="pointReadout">2,400 PTS</strong></div>
           <div class="transport">
             <button id="playPause" class="transport__play" type="button" aria-label="Play audio">▶</button>
@@ -252,7 +229,7 @@
       </section>
 
       <div class="workspace__statusbar">
-        <span><b>LEFT DRAG:</b> ROTATE</span><span><b>RIGHT DRAG:</b> PAN</span><span><b>WHEEL:</b> ZOOM</span><span><b>SPACEBAR:</b> PLAY/PAUSE</span>
+        <span><b>VIEW:</b> 2D PHYLLOTAXIS</span><span><b>SPACEBAR:</b> PLAY/PAUSE</span><span><b>H:</b> HUD</span><span><b>F:</b> FULLSCREEN</span>
       </div>
     </main>
   </div>
