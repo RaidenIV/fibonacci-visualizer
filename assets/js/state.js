@@ -5,6 +5,7 @@ export class StateStore extends EventTarget {
     super();
     this.storageKey = storageKey;
     this.settings = { ...DEFAULTS, ...this.readStoredSettings() };
+    if (!["mp4", "mkv"].includes(this.settings.exportFormat)) this.settings.exportFormat = "mp4";
   }
 
   readStoredSettings() {

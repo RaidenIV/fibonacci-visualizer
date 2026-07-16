@@ -1,5 +1,5 @@
 import { LoopEditor } from "./loop-editor.js";
-import { createToast, formatBytes, formatTime, getExtension } from "./utils.js";
+import { clamp, createToast, formatBytes, formatTime, getExtension } from "./utils.js";
 
 const CONTROL_FORMATS = {
   pointCount: (v) => Number(v).toLocaleString(), spacing: (v) => Number(v).toFixed(2), pointSize: (v) => Number(v).toFixed(1),
@@ -27,7 +27,7 @@ export class UIController extends EventTarget {
   }
 
   collectElements() {
-    const ids = ["appShell","sidebar","closeSidebar","audioFile","audioStatus","audioFileLabel","trackName","trackDuration","trackFormat","trackSize","fileDrop","dropOverlay","audio","playPause","clearWaveform","loopButton","loopStatus","seek","currentTime","totalTime","viewportFrame","safeArea","fullscreen","fitView","fpsReadout","pointReadout","rendererInfo","drawCalls","gpuPoints","pixelRatio","qualityBadge","exportVideo","exportPng","exportSettings","importSettings","resetSettings","recordingStatus","exportProgress","exportProgressLabel","exportProgressValue","exportProgressBar","exportProgressMeta","toastStack"];
+    const ids = ["appShell","sidebar","closeSidebar","audioFile","audioStatus","audioFileLabel","trackName","trackDuration","trackFormat","trackSize","fileDrop","dropOverlay","audio","playPause","clearWaveform","loopButton","loopStatus","seek","currentTime","totalTime","viewportFrame","safeArea","rendererInfo","drawCalls","gpuPoints","pixelRatio","qualityBadge","exportVideo","exportPng","exportSettings","importSettings","resetSettings","recordingStatus","exportProgress","exportProgressLabel","exportProgressValue","exportProgressBar","exportProgressMeta","toastStack"];
     const elements = {};
     for (const id of ids) elements[id] = document.getElementById(id);
     return elements;
@@ -44,6 +44,39 @@ export class UIController extends EventTarget {
         this.updateOutput(key, value);
       });
     }
+
+    document.querySelectorAll(".range-value-input[data-range-id]").forEach((editor) => {
+      const commit = () => {
+        const key = editor.dataset.rangeId;
+        const range = document.getElementById(key);
+        if (!range) return;
+        const multiplier = Number(editor.dataset.displayMultiplier || 1);
+        const displayedMin = Number(editor.min);
+        const displayedMax = Number(editor.max);
+        let displayed = Number(editor.value);
+        if (!Number.isFinite(displayed)) {
+          this.updateOutput(key, this.state.get(key));
+          return;
+        }
+        displayed = clamp(displayed, displayedMin, displayedMax);
+        const editorStep = Number(editor.step);
+        if (Number.isFinite(editorStep) && editorStep > 0) {
+          displayed = Math.round((displayed - displayedMin) / editorStep) * editorStep + displayedMin;
+        }
+        const value = displayed / multiplier;
+        this.state.set(key, value);
+        this.updateOutput(key, value);
+      };
+      editor.addEventListener("change", commit);
+      editor.addEventListener("blur", commit);
+      editor.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+          editor.blur();
+        }
+      });
+    });
 
     this.elements.audioFile.addEventListener("change", () => this.loadSelectedFile(this.elements.audioFile.files?.[0]));
     this.elements.fileDrop.addEventListener("dragover", (event) => { event.preventDefault(); this.elements.fileDrop.classList.add("is-dragging"); });
@@ -67,12 +100,11 @@ export class UIController extends EventTarget {
     this.elements.loopButton.addEventListener("click", () => this.loopEditor.open());
     this.elements.seek.addEventListener("input", () => this.audioEngine.seek(Number(this.elements.seek.value)));
     this.elements.closeSidebar.addEventListener("click", () => this.elements.appShell.classList.add("sidebar-hidden"));
-    this.elements.fullscreen.addEventListener("click", () => this.toggleFullscreen());
-    this.elements.fitView.addEventListener("click", () => this.visualizer.fitView());
     document.querySelectorAll("[data-camera]").forEach((button) => button.addEventListener("click", () => this.visualizer.setCameraPreset(button.dataset.camera)));
     document.querySelectorAll("[data-preset]").forEach((button) => button.addEventListener("click", () => { this.state.applyPreset(button.dataset.preset); this.toast(`${button.dataset.preset.toUpperCase()} preset loaded.`); }));
 
     this.elements.exportVideo.addEventListener("click", () => this.exporter.start().catch((error) => this.toast(error.message, "error")));
+    this.exporter.addEventListener("error", (event) => this.toast(event.detail?.message || "Video export failed.", "error"));
     this.elements.exportPng.addEventListener("click", () => this.dispatchEvent(new Event("export-png")));
     this.elements.exportSettings.addEventListener("click", () => this.exportSettings());
     this.elements.importSettings.addEventListener("change", () => this.importSettings(this.elements.importSettings.files?.[0]));
@@ -131,7 +163,15 @@ export class UIController extends EventTarget {
 
   updateOutput(key, value) {
     const output = document.getElementById(`${key}Value`);
-    if (output && CONTROL_FORMATS[key]) output.textContent = CONTROL_FORMATS[key](value);
+    if (!output) return;
+    if (output.matches("input.range-value-input")) {
+      const multiplier = Number(output.dataset.displayMultiplier || 1);
+      const decimals = Math.max(0, Number(output.dataset.decimals || 0));
+      const displayed = Number(value) * multiplier;
+      if (document.activeElement !== output) output.value = Number.isFinite(displayed) ? displayed.toFixed(decimals) : "0";
+      return;
+    }
+    if (CONTROL_FORMATS[key]) output.textContent = CONTROL_FORMATS[key](value);
   }
 
   syncViewportFormat() {
@@ -186,8 +226,6 @@ export class UIController extends EventTarget {
 
   updateRuntime(meta) {
     this.syncPlayback();
-    this.elements.fpsReadout.textContent = `${Math.round(meta.fps)} FPS`;
-    this.elements.pointReadout.textContent = `${meta.points.toLocaleString()} PTS`;
     this.elements.drawCalls.textContent = String(meta.drawCalls);
     this.elements.gpuPoints.textContent = meta.points.toLocaleString();
     this.elements.pixelRatio.textContent = `${meta.pixelRatio.toFixed(2)}×`;
@@ -198,7 +236,7 @@ export class UIController extends EventTarget {
     this.elements.exportVideo.textContent = "STOP & SAVE VIDEO";
     this.elements.exportVideo.classList.add("is-recording");
     this.elements.exportProgress.hidden = false;
-    this.elements.exportProgressLabel.textContent = `${detail.width}×${detail.height} @ ${detail.fps} FPS`;
+    this.elements.exportProgressLabel.textContent = `${detail.format || "VIDEO"} // ${detail.width}×${detail.height} @ ${detail.fps} FPS`;
     this.elements.exportProgressMeta.textContent = detail.duration > 0 ? `Capturing ${formatTime(detail.duration)} in real time.` : "Capturing until stopped.";
   }
 

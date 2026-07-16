@@ -53,7 +53,7 @@
               <div class="loop-status" data-tone="idle" id="loopStatus">Load and analyze audio to create a loop.</div>
             </div>
             <div class="control">
-              <div class="control__row"><label for="volume">Volume</label><output id="volumeValue">100%</output></div>
+              <div class="control__row"><label for="volume">Volume</label><span class="range-value-editor"><input aria-label="Volume value" class="range-value-input" data-decimals="0" data-display-multiplier="100" data-range-id="volume" id="volumeValue" min="0" max="100" step="1" type="number" value="100" /><span aria-hidden="true" class="range-value-suffix">%</span></span></div>
               <input id="volume" type="range" min="0" max="1" step="0.01" value="1" />
             </div>
             <div class="toggle-grid toggle-grid--single">
@@ -70,23 +70,23 @@
               <select id="shape"><option value="circle">Circle</option><option value="square">Square</option><option value="triangle">Triangle</option></select>
             </div>
             <div class="control">
-              <div class="control__row"><label for="pointCount">Base Points</label><output id="pointCountValue">300</output></div>
+              <div class="control__row"><label for="pointCount">Base Points</label><span class="range-value-editor"><input aria-label="Base points value" class="range-value-input" data-decimals="0" data-display-multiplier="1" data-range-id="pointCount" id="pointCountValue" min="100" max="8000" step="100" type="number" value="300" /></span></div>
               <input id="pointCount" type="range" min="100" max="8000" step="100" value="300" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="spacing">Spiral Spacing</label><output id="spacingValue">1.00</output></div>
+              <div class="control__row"><label for="spacing">Spiral Spacing</label><span class="range-value-editor"><input aria-label="Spiral spacing value" class="range-value-input" data-decimals="2" data-display-multiplier="1" data-range-id="spacing" id="spacingValue" min="0.2" max="2" step="0.01" type="number" value="1.00" /></span></div>
               <input id="spacing" type="range" min="0.2" max="2" step="0.01" value="1" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="pointSize">Point Size</label><output id="pointSizeValue">2.0</output></div>
+              <div class="control__row"><label for="pointSize">Point Size</label><span class="range-value-editor"><input aria-label="Point size value" class="range-value-input" data-decimals="1" data-display-multiplier="1" data-range-id="pointSize" id="pointSizeValue" min="0.5" max="12" step="0.1" type="number" value="2.0" /></span></div>
               <input id="pointSize" type="range" min="0.5" max="12" step="0.1" value="2" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="goldenAngle">Golden Angle</label><output id="goldenAngleValue">137.50°</output></div>
+              <div class="control__row"><label for="goldenAngle">Golden Angle</label><span class="range-value-editor"><input aria-label="Golden angle value" class="range-value-input" data-decimals="2" data-display-multiplier="1" data-range-id="goldenAngle" id="goldenAngleValue" min="120" max="155" step="0.01" type="number" value="137.50" /><span aria-hidden="true" class="range-value-suffix">°</span></span></div>
               <input id="goldenAngle" type="range" min="120" max="155" step="0.01" value="137.5" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="warp">Radial Warp</label><output id="warpValue">0.30</output></div>
+              <div class="control__row"><label for="warp">Radial Warp</label><span class="range-value-editor"><input aria-label="Radial warp value" class="range-value-input" data-decimals="2" data-display-multiplier="1" data-range-id="warp" id="warpValue" min="0" max="1.5" step="0.01" type="number" value="0.30" /></span></div>
               <input id="warp" type="range" min="0" max="1.5" step="0.01" value="0.3" />
             </div>
           </div>
@@ -96,27 +96,27 @@
           <summary><span>Audio Reactivity</span><strong>FFT</strong></summary>
           <div class="panel__body">
             <div class="control">
-              <div class="control__row"><label for="sensitivity">Sensitivity</label><output id="sensitivityValue">1.60×</output></div>
+              <div class="control__row"><label for="sensitivity">Sensitivity</label><span class="range-value-editor"><input aria-label="Sensitivity value" class="range-value-input" data-decimals="2" data-display-multiplier="1" data-range-id="sensitivity" id="sensitivityValue" min="0.1" max="5" step="0.05" type="number" value="1.60" /><span aria-hidden="true" class="range-value-suffix">×</span></span></div>
               <input id="sensitivity" type="range" min="0.1" max="5" step="0.05" value="1.6" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="smoothing">Smoothing</label><output id="smoothingValue">78%</output></div>
+              <div class="control__row"><label for="smoothing">Smoothing</label><span class="range-value-editor"><input aria-label="Smoothing value" class="range-value-input" data-decimals="0" data-display-multiplier="100" data-range-id="smoothing" id="smoothingValue" min="0" max="95" step="1" type="number" value="78" /><span aria-hidden="true" class="range-value-suffix">%</span></span></div>
               <input id="smoothing" type="range" min="0" max="0.95" step="0.01" value="0.78" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="audioScale">Scale Response</label><output id="audioScaleValue">1.00×</output></div>
+              <div class="control__row"><label for="audioScale">Scale Response</label><span class="range-value-editor"><input aria-label="Scale response value" class="range-value-input" data-decimals="2" data-display-multiplier="1" data-range-id="audioScale" id="audioScaleValue" min="0" max="3" step="0.05" type="number" value="1.00" /><span aria-hidden="true" class="range-value-suffix">×</span></span></div>
               <input id="audioScale" type="range" min="0" max="3" step="0.05" value="1" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="audioDensity">Density Response</label><output id="audioDensityValue">100%</output></div>
+              <div class="control__row"><label for="audioDensity">Density Response</label><span class="range-value-editor"><input aria-label="Density response value" class="range-value-input" data-decimals="0" data-display-multiplier="100" data-range-id="audioDensity" id="audioDensityValue" min="0" max="100" step="1" type="number" value="100" /><span aria-hidden="true" class="range-value-suffix">%</span></span></div>
               <input id="audioDensity" type="range" min="0" max="1" step="0.01" value="1" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="audioSize">Size Response</label><output id="audioSizeValue">1.00×</output></div>
+              <div class="control__row"><label for="audioSize">Size Response</label><span class="range-value-editor"><input aria-label="Size response value" class="range-value-input" data-decimals="2" data-display-multiplier="1" data-range-id="audioSize" id="audioSizeValue" min="0" max="4" step="0.05" type="number" value="1.00" /><span aria-hidden="true" class="range-value-suffix">×</span></span></div>
               <input id="audioSize" type="range" min="0" max="4" step="0.05" value="1" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="audioRotation">Rotation Response</label><output id="audioRotationValue">1.00×</output></div>
+              <div class="control__row"><label for="audioRotation">Rotation Response</label><span class="range-value-editor"><input aria-label="Rotation response value" class="range-value-input" data-decimals="2" data-display-multiplier="1" data-range-id="audioRotation" id="audioRotationValue" min="0" max="4" step="0.05" type="number" value="1.00" /><span aria-hidden="true" class="range-value-suffix">×</span></span></div>
               <input id="audioRotation" type="range" min="0" max="4" step="0.05" value="1" />
             </div>
           </div>
@@ -126,7 +126,7 @@
           <summary><span>Motion &amp; Color</span><strong>LIVE</strong></summary>
           <div class="panel__body">
             <div class="control">
-              <div class="control__row"><label for="rotationSpeed">Base Rotation</label><output id="rotationSpeedValue">0.00</output></div>
+              <div class="control__row"><label for="rotationSpeed">Base Rotation</label><span class="range-value-editor"><input aria-label="Base rotation value" class="range-value-input" data-decimals="2" data-display-multiplier="1" data-range-id="rotationSpeed" id="rotationSpeedValue" min="-1" max="1" step="0.01" type="number" value="0.00" /></span></div>
               <input id="rotationSpeed" type="range" min="-1" max="1" step="0.01" value="0" />
             </div>
             <div class="control">
@@ -136,11 +136,11 @@
               </select>
             </div>
             <div class="control">
-              <div class="control__row"><label for="colorCycle">Color Cycle</label><output id="colorCycleValue">0.00</output></div>
+              <div class="control__row"><label for="colorCycle">Color Cycle</label><span class="range-value-editor"><input aria-label="Color cycle value" class="range-value-input" data-decimals="2" data-display-multiplier="1" data-range-id="colorCycle" id="colorCycleValue" min="-0.5" max="0.5" step="0.01" type="number" value="0.00" /></span></div>
               <input id="colorCycle" type="range" min="-0.5" max="0.5" step="0.01" value="0" />
             </div>
             <div class="control">
-              <div class="control__row"><label for="opacity">Opacity</label><output id="opacityValue">100%</output></div>
+              <div class="control__row"><label for="opacity">Opacity</label><span class="range-value-editor"><input aria-label="Opacity value" class="range-value-input" data-decimals="0" data-display-multiplier="100" data-range-id="opacity" id="opacityValue" min="5" max="100" step="1" type="number" value="100" /><span aria-hidden="true" class="range-value-suffix">%</span></span></div>
               <input id="opacity" type="range" min="0.05" max="1" step="0.01" value="1" />
             </div>
             <label class="switch-row"><span>Additive Glow</span><input id="additive" type="checkbox" /><i></i></label>
@@ -185,7 +185,7 @@
               <div><div class="control__row"><label for="exportFps">FPS</label></div><select id="exportFps"><option value="30">30</option><option value="60" selected>60</option></select></div>
             </div>
             <div class="control two-up">
-              <div><div class="control__row"><label for="exportFormat">Format</label></div><select id="exportFormat"><option value="auto">Auto</option><option value="webm">WebM</option><option value="mp4">MP4</option></select></div>
+              <div><div class="control__row"><label for="exportFormat">Format</label></div><select id="exportFormat"><option value="mp4" selected>MP4</option><option value="mkv">MKV</option></select></div>
               <div><div class="control__row"><label for="exportBitrate">Bitrate</label></div><select id="exportBitrate"><option value="8">8 Mbps</option><option value="16" selected>16 Mbps</option><option value="24">24 Mbps</option><option value="40">40 Mbps</option></select></div>
             </div>
             <div class="control two-up">
@@ -215,10 +215,6 @@
     </aside>
 
     <main class="workspace">
-      <div class="workspace__topbar">
-        <div class="workspace__actions"><button class="toolbar-button" id="fitView" type="button">FIT</button><button class="toolbar-button" id="fullscreen" type="button">FULLSCREEN</button></div>
-      </div>
-
       <section class="viewport-stage" id="viewportStage">
         <div class="viewport-frame" id="viewportFrame" data-format="responsive">
           <canvas id="webglCanvas"></canvas>
@@ -227,14 +223,9 @@
           <div class="drop-overlay" id="dropOverlay">
             <div class="drop-overlay__target"><span>＋</span><strong>DROP AUDIO TO LOAD</strong><small>Local processing only</small></div>
           </div>
-          <div class="corner-label corner-label--tl"><span>SYS</span><strong>PYTHON 2D // PHYLLOTAXIS</strong></div>
-          <div class="corner-label corner-label--tr"><span id="fpsReadout">60 FPS</span><strong id="pointReadout">2,400 PTS</strong></div>
         </div>
       </section>
 
-      <div class="workspace__statusbar">
-        <span><b>VIEW:</b> 2D PHYLLOTAXIS</span><span><b>SPACEBAR:</b> PLAY/PAUSE</span><span><b>H:</b> HUD</span><span><b>F:</b> FULLSCREEN</span>
-      </div>
     </main>
   </div>
 

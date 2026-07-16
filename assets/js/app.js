@@ -67,7 +67,9 @@ class FibonacciAudioFieldApp {
       points: stats.points,
       drawCalls: stats.drawCalls,
       pixelRatio: stats.pixelRatio,
-      mode: this.audioEngine.file ? "AUDIO" : this.state.get("demoMode") ? "DEMO" : "STATIC",
+      mode: this.audioEngine.file ? (!audio.paused && !audio.ended ? "PLAYING" : "PAUSED") : this.state.get("demoMode") ? "DEMO" : "STATIC",
+      fileName: this.audioEngine.file?.name || (this.state.get("demoMode") ? "SYNTHETIC DEMO SIGNAL" : "NO AUDIO FILE"),
+      fftSize: this.audioEngine.analyser?.fftSize || 2048,
       currentTime: this.audioEngine.file ? audio.currentTime : 0,
       duration: this.audioEngine.file ? audio.duration : 0,
     };

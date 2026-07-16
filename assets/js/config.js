@@ -34,7 +34,7 @@ export const DEFAULTS = Object.freeze({
   quality: "balanced",
   exportResolution: "current",
   exportFps: 60,
-  exportFormat: "auto",
+  exportFormat: "mp4",
   exportBitrate: 16,
   exportRange: "current",
   exportFileName: "fibonacci-audio-field",
