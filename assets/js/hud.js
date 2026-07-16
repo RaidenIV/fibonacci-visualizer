@@ -29,6 +29,10 @@ export class HudRenderer {
     this.frameCounter = 0;
     this.lastFpsAt = performance.now();
     this.lastDrawAt = 0;
+    this.logoImage = new Image();
+    this.logoReady = false;
+    this.logoImage.addEventListener("load", () => { this.logoReady = true; });
+    this.logoImage.src = "./AIGOX.svg";
   }
 
   updateFps(now) {
@@ -274,6 +278,24 @@ export class HudRenderer {
     }
 
     this.drawLevels(ctx, layout.levels, layout.fontSize, line, metrics);
+    this.drawLogo(ctx, width, height, layout);
+    ctx.restore();
+  }
+
+  drawLogo(ctx, width, height, layout) {
+    if (!this.logoReady || !this.logoImage.naturalWidth || !this.logoImage.naturalHeight) return;
+    const ratio = width / Math.max(1, height);
+    const portrait = this.state.get("viewportFormat") === "portrait" || ratio < 0.75;
+    const square = this.state.get("viewportFormat") === "square" || (!portrait && ratio >= 0.75 && ratio <= 1.25);
+    const sizePercent = portrait ? 14 : square ? 10 : 5.5;
+    const yPercent = portrait ? 3.5 : 5;
+    const drawWidth = width * (sizePercent / 100);
+    const drawHeight = drawWidth * (this.logoImage.naturalHeight / this.logoImage.naturalWidth);
+    const centerX = width * 0.5;
+    const centerY = height * (yPercent / 100);
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    ctx.drawImage(this.logoImage, centerX - drawWidth / 2, centerY - drawHeight / 2, drawWidth, drawHeight);
     ctx.restore();
   }
 

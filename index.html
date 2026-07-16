@@ -52,9 +52,16 @@
               <button aria-pressed="false" disabled id="loopButton" type="button">Loop</button>
               <div class="loop-status" data-tone="idle" id="loopStatus">Load and analyze audio to create a loop.</div>
             </div>
-            <div class="control">
-              <div class="control__row"><label for="volume">Volume</label><span class="range-value-editor"><input aria-label="Volume value" class="range-value-input" data-decimals="0" data-display-multiplier="100" data-range-id="volume" id="volumeValue" min="0" max="100" step="1" type="number" value="100" /><span aria-hidden="true" class="range-value-suffix">%</span></span></div>
+            <div class="control playback-volume-control">
+              <div class="control__row"><label for="volume">Volume</label></div>
               <input id="volume" type="range" min="0" max="1" step="0.01" value="1" />
+            </div>
+            <div class="control toggle-row playback-mute-control">
+              <label for="muted">Mute</label>
+              <label aria-label="Mute" class="toggle-switch">
+                <input class="toggle-switch-input" id="muted" role="switch" type="checkbox" />
+                <span aria-hidden="true" class="toggle-switch-track"></span>
+              </label>
             </div>
             <div class="toggle-grid toggle-grid--single">
               <label class="switch-row"><span>Demo Without Audio</span><input id="demoMode" type="checkbox" checked /><i></i></label>
@@ -209,6 +216,7 @@
       </div>
 
       <footer class="sidebar__footer">
+        <div aria-label="AIGOX logo" class="sidebar-logo"><img alt="AIGOX" src="./AIGOX.svg" /></div>
         <div class="preset-row"><span>PRESETS</span><button data-preset="original">ORIGINAL</button><button data-preset="calm">CALM</button><button data-preset="reactive">REACTIVE</button><button data-preset="tunnel">TUNNEL</button></div>
         <p>SPACE: PLAY / PAUSE&nbsp;&nbsp;|&nbsp;&nbsp;H: HUD&nbsp;&nbsp;|&nbsp;&nbsp;F: FULLSCREEN</p>
       </footer>

@@ -31,6 +31,7 @@ class FibonacciAudioFieldApp {
       this.ui.syncControl(key, value);
       if (key === "smoothing") this.audioEngine.setSmoothing(value);
       if (key === "volume") this.audioEngine.setVolume(value);
+      if (key === "muted") this.audioEngine.setMuted(value);
       if (key === "loopTrack") this.audioEngine.setLoop(value);
     };
     this.state.addEventListener("change", (event) => apply(event.detail.key, event.detail.value));
@@ -38,6 +39,7 @@ class FibonacciAudioFieldApp {
     this.state.addEventListener("reset", (event) => { for (const [key, value] of Object.entries(event.detail)) apply(key, value); });
     this.audioEngine.setLoop(this.state.get("loopTrack"));
     this.audioEngine.setVolume(this.state.get("volume"));
+    this.audioEngine.setMuted(this.state.get("muted"));
     this.ui.addEventListener("export-png", () => this.exporter.exportPng(this.metrics, this.getMeta()));
     this.ui.addEventListener("clear-waveform", () => this.visualizer.clearWaveform());
   }

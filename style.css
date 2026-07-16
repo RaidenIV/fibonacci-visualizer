@@ -1150,3 +1150,112 @@ body.loop-editor-open {
     transition: none !important;
   }
 }
+
+
+/* AIGOX branding, reference-parity volume/mute controls, and preset label fit. */
+.sidebar-logo {
+  width: min(140.625px, 48.75%);
+  margin: 0 auto;
+  color: #ffffff;
+  opacity: 0.92;
+  line-height: 0;
+  pointer-events: none;
+}
+
+.sidebar-logo img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.sidebar .playback-volume-control {
+  margin-bottom: 0;
+}
+
+.sidebar .playback-volume-control .control__row {
+  margin-bottom: 8px;
+}
+
+.sidebar .playback-mute-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: -2px;
+  margin-bottom: 0;
+  padding-left: 2px;
+}
+
+.sidebar .playback-mute-control > label:first-child {
+  color: #ffffff;
+  font-family: "Cozette", "CozetteVector", var(--font-mono);
+  font-size: 12px;
+}
+
+.sidebar .toggle-switch {
+  position: relative;
+  display: block;
+  width: 36px;
+  height: 20px;
+  transform: translateY(-1px);
+}
+
+.sidebar .toggle-switch-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.sidebar .toggle-switch-track {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: #1b1b1b;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.sidebar .toggle-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+
+.sidebar .toggle-switch-input:checked + .toggle-switch-track {
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.sidebar .toggle-switch-input:checked + .toggle-switch-track::after {
+  transform: translateX(16px);
+  background: #ffffff;
+}
+
+.sidebar .toggle-switch-input:focus-visible + .toggle-switch-track {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.sidebar .preset-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.sidebar .preset-row span {
+  grid-column: 1 / -1;
+}
+
+.sidebar .preset-row button {
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}

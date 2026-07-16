@@ -23,6 +23,7 @@ export const DEFAULTS = Object.freeze({
   opacity: 1,
   additive: false,
   volume: 1,
+  muted: false,
   loopTrack: false,
   demoMode: true,
   viewportFormat: "responsive",

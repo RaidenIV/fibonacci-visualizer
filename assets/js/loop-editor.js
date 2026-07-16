@@ -115,16 +115,20 @@ export class LoopEditor {
     e["popup-loop-switch"].addEventListener("keydown", (event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); this.togglePreviewLoop(); } });
     e["popup-force-start-toggle"].addEventListener("change", () => { this.forceStart = e["popup-force-start-toggle"].checked; });
 
-    e["popup-vol-slider"].addEventListener("input", () => {
+    const syncPreviewVolume = () => {
       const volume = Number(e["popup-vol-slider"].value) / 100;
-      this.state.set("volume", volume);
+      const muted = Boolean(this.state.get("muted"));
       e["popup-vol-pct"].textContent = `${Math.round(volume * 100)}%`;
-      e["popup-mute-btn"].textContent = volume <= 0 ? "🔇" : "🔊";
+      e["popup-mute-btn"].textContent = muted || volume <= 0 ? "🔇" : volume < 0.4 ? "🔈" : volume < 0.75 ? "🔉" : "🔊";
+      e["popup-mute-btn"].setAttribute("aria-pressed", String(muted));
+    };
+    e["popup-vol-slider"].addEventListener("input", () => {
+      this.state.set("volume", Number(e["popup-vol-slider"].value) / 100);
+      syncPreviewVolume();
     });
     e["popup-mute-btn"].addEventListener("click", () => {
-      const muted = Number(e["popup-vol-slider"].value) > 0;
-      e["popup-vol-slider"].value = muted ? "0" : String(Math.round(this.state.get("volume") * 100) || 80);
-      e["popup-vol-slider"].dispatchEvent(new Event("input"));
+      this.state.set("muted", !this.state.get("muted"));
+      syncPreviewVolume();
     });
 
     e["popup-bpm-input"].addEventListener("change", () => {
@@ -232,6 +236,8 @@ export class LoopEditor {
     e["popup-force-start-toggle"].checked = true;
     e["popup-vol-slider"].value = String(Math.round(this.state.get("volume") * 100));
     e["popup-vol-pct"].textContent = `${Math.round(this.state.get("volume") * 100)}%`;
+    e["popup-mute-btn"].textContent = this.state.get("muted") || this.state.get("volume") <= 0 ? "🔇" : this.state.get("volume") < 0.4 ? "🔈" : this.state.get("volume") < 0.75 ? "🔉" : "🔊";
+    e["popup-mute-btn"].setAttribute("aria-pressed", String(Boolean(this.state.get("muted"))));
     e["popup-t-total"].textContent = formatPrecise(loop.trackDuration);
     e["popup-stat-rate"].textContent = `${this.audioEngine.decodedBuffer.sampleRate.toLocaleString()} Hz`;
     e["popup-stat-dur"].textContent = formatPrecise(loop.trackDuration);

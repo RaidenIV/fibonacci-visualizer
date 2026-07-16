@@ -60,11 +60,13 @@ export class AudioEngine extends EventTarget {
     this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
     this.waveformData = new Uint8Array(this.analyser.fftSize);
     this.waveformData.fill(128);
-    this.source.connect(this.gain);
-    this.gain.connect(this.analyser);
-    this.analyser.connect(this.context.destination);
+    // Match the reference signal path: analyse the full-strength source first,
+    // then apply volume and mute only to speaker and recording output.
+    this.source.connect(this.analyser);
+    this.analyser.connect(this.gain);
+    this.gain.connect(this.context.destination);
     this.gain.connect(this.recordDestination);
-    this.setVolume(this.state.get("volume"));
+    this.applyOutputLevel(this.state.get("volume"), this.state.get("muted"));
   }
 
   async loadFile(file) {
@@ -156,10 +158,23 @@ export class AudioEngine extends EventTarget {
     this.audio.currentTime = clamp(seconds, 0, this.audio.duration);
   }
 
-  setVolume(value) {
-    const volume = clamp(Number(value), 0, 1);
-    if (this.gain && this.context) this.gain.gain.setTargetAtTime(volume, this.context.currentTime, 0.01);
+  applyOutputLevel(volume = this.state.get("volume"), muted = this.state.get("muted")) {
+    const outputLevel = Boolean(muted) ? 0 : clamp(Number(volume), 0, 1);
+    if (this.gain && this.context) {
+      this.gain.gain.setTargetAtTime(outputLevel, this.context.currentTime, 0.01);
+    }
+    // Keep the media element neutral so the analyser always receives the
+    // unattenuated source signal, exactly like the reference project.
     this.audio.volume = 1;
+    this.audio.muted = false;
+  }
+
+  setVolume(value) {
+    this.applyOutputLevel(value, this.state.get("muted"));
+  }
+
+  setMuted(value) {
+    this.applyOutputLevel(this.state.get("volume"), value);
   }
 
   getDuration() {

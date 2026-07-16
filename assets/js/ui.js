@@ -10,7 +10,7 @@ const CONTROL_FORMATS = {
   colorCycle: (v) => Number(v).toFixed(2), opacity: (v) => `${Math.round(v * 100)}%`, volume: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${Math.round(v)}°`,
 };
 
-const BOOLEAN_KEYS = new Set(["loopTrack", "demoMode", "additive", "autoOrbit", "showGrid", "showHud", "showSafeArea"]);
+const BOOLEAN_KEYS = new Set(["loopTrack", "demoMode", "muted", "additive", "autoOrbit", "showGrid", "showHud", "showSafeArea"]);
 const NUMBER_KEYS = new Set(["pointCount", "spacing", "pointSize", "goldenAngle", "warp", "depth", "depthFrequency", "sensitivity", "smoothing", "audioScale", "audioDensity", "audioSize", "audioRotation", "audioDepth", "rotationSpeed", "colorCycle", "opacity", "volume", "fov", "exportFps", "exportBitrate"]);
 
 export class UIController extends EventTarget {
@@ -149,7 +149,7 @@ export class UIController extends EventTarget {
     this.elements.seek.addEventListener("input", () => this.audioEngine.seek(Number(this.elements.seek.value)));
     this.elements.closeSidebar.addEventListener("click", () => this.toggleSidebar());
     document.querySelectorAll("[data-camera]").forEach((button) => button.addEventListener("click", () => this.visualizer.setCameraPreset(button.dataset.camera)));
-    document.querySelectorAll("[data-preset]").forEach((button) => button.addEventListener("click", () => { this.state.applyPreset(button.dataset.preset); this.toast(`${button.dataset.preset.toUpperCase()} preset loaded.`); }));
+    document.querySelectorAll("[data-preset]").forEach((button) => button.addEventListener("click", () => this.state.applyPreset(button.dataset.preset)));
 
     this.elements.exportVideo.addEventListener("click", () => this.exporter.start().catch((error) => this.toast(error.message, "error")));
     this.exporter.addEventListener("error", (event) => this.toast(event.detail?.message || "Video export failed.", "error"));

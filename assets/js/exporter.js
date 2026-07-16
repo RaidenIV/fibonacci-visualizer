@@ -293,7 +293,7 @@ export class Exporter extends EventTarget {
     const endFrame = Math.max(startFrame + 1, Math.min(source.length, Math.ceil(end * sampleRate)));
     const frameCount = endFrame - startFrame;
     const segment = new AudioBuffer({ length: frameCount, numberOfChannels: Math.max(1, source.numberOfChannels), sampleRate });
-    const gain = Math.max(0, Math.min(1, Number(this.state.get("volume")) || 0));
+    const gain = this.state.get("muted") ? 0 : Math.max(0, Math.min(1, Number(this.state.get("volume")) || 0));
     for (let channelIndex = 0; channelIndex < segment.numberOfChannels; channelIndex += 1) {
       const sourceChannel = source.getChannelData(Math.min(channelIndex, source.numberOfChannels - 1));
       const destination = segment.getChannelData(channelIndex);
