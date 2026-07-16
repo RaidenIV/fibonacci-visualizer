@@ -1010,3 +1010,143 @@ body.loop-editor-open {
   line-height: 1;
   white-space: nowrap;
 }
+
+/* Animated sidebar minimization and section expansion, matching the reference project. */
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 60px minmax(0, 1fr);
+}
+
+.sidebar {
+  transition:
+    min-width 180ms ease,
+    width 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.sidebar__brand-block,
+.sidebar__scroll,
+.sidebar__footer {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 120ms ease 45ms,
+    visibility 0s linear 0s;
+}
+
+.app-shell.sidebar-collapsed .sidebar {
+  width: 60px;
+  min-width: 60px;
+  overflow: hidden;
+}
+
+.app-shell.sidebar-collapsed .sidebar__header {
+  min-height: 60px;
+  padding: 0;
+  border-bottom-color: transparent;
+}
+
+.app-shell.sidebar-collapsed .sidebar__brand-block,
+.app-shell.sidebar-collapsed .sidebar__scroll,
+.app-shell.sidebar-collapsed .sidebar__footer {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 100ms ease,
+    visibility 0s linear 100ms;
+}
+
+.sidebar__close {
+  transition:
+    top 180ms ease,
+    right 180ms ease,
+    left 180ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.app-shell.sidebar-collapsed .sidebar__close {
+  top: 12px;
+  right: auto;
+  left: 12px;
+}
+
+.sidebar-toggle-icon {
+  display: block;
+  transform: translateY(-1px);
+}
+
+.sidebar .panel__body {
+  display: grid !important;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+  animation: none;
+  transition:
+    grid-template-rows 220ms ease,
+    opacity 160ms ease 45ms,
+    visibility 0s linear 0s;
+}
+
+.sidebar .panel__body-inner {
+  min-height: 0;
+  overflow: hidden;
+  transform: translateY(0);
+  transition: transform 220ms ease;
+}
+
+.sidebar .panel.is-collapsed summary {
+  margin-bottom: 0;
+}
+
+.sidebar .panel.is-collapsed summary::after {
+  content: "+";
+}
+
+.sidebar .panel.is-collapsed .panel__body {
+  grid-template-rows: minmax(0, 0fr);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    grid-template-rows 220ms ease,
+    opacity 120ms ease,
+    visibility 0s linear 220ms;
+}
+
+.sidebar .panel.is-collapsed .panel__body-inner {
+  transform: translateY(-4px);
+}
+
+.sidebar .panel__body-inner > :last-child,
+.sidebar .panel__body-inner > .control:last-child,
+.sidebar .panel__body-inner > .switch-row:last-child,
+.sidebar .panel__body-inner > .action-button:last-child,
+.sidebar .panel__body-inner > .button-grid:last-child,
+.sidebar .panel__body-inner > .diagnostic-grid:last-child,
+.sidebar .panel__body-inner > .export-progress:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 1050px) {
+  .app-shell.sidebar-collapsed .sidebar {
+    width: 60px;
+    min-width: 60px;
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar__close,
+  .sidebar__brand-block,
+  .sidebar__scroll,
+  .sidebar__footer,
+  .sidebar .panel__body,
+  .sidebar .panel__body-inner {
+    transition: none !important;
+  }
+}

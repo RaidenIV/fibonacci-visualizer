@@ -22,15 +22,63 @@ export class UIController extends EventTarget {
     this.exporter = exporter;
     this.elements = this.collectElements();
     this.loopEditor = new LoopEditor(audioEngine, state, (message, tone) => this.toast(message, tone));
+    this.initializeCollapsibleSections();
     this.bindControls();
     this.syncAll();
   }
 
   collectElements() {
-    const ids = ["appShell","sidebar","closeSidebar","audioFile","audioStatus","audioFileLabel","trackName","trackDuration","trackFormat","trackSize","fileDrop","dropOverlay","audio","playPause","clearWaveform","loopButton","loopStatus","seek","currentTime","totalTime","viewportFrame","safeArea","rendererInfo","drawCalls","gpuPoints","pixelRatio","qualityBadge","exportVideo","exportPng","exportSettings","importSettings","resetSettings","recordingStatus","exportProgress","exportProgressLabel","exportProgressValue","exportProgressBar","exportProgressMeta","toastStack"];
+    const ids = ["appShell","sidebar","closeSidebar","sidebarToggleIcon","audioFile","audioStatus","audioFileLabel","trackName","trackDuration","trackFormat","trackSize","fileDrop","dropOverlay","audio","playPause","clearWaveform","loopButton","loopStatus","seek","currentTime","totalTime","viewportFrame","safeArea","rendererInfo","drawCalls","gpuPoints","pixelRatio","qualityBadge","exportVideo","exportPng","exportSettings","importSettings","resetSettings","recordingStatus","exportProgress","exportProgressLabel","exportProgressValue","exportProgressBar","exportProgressMeta","toastStack"];
     const elements = {};
     for (const id of ids) elements[id] = document.getElementById(id);
     return elements;
+  }
+
+  initializeCollapsibleSections() {
+    document.querySelectorAll(".sidebar details.panel").forEach((panel, index) => {
+      const summary = panel.querySelector(":scope > summary");
+      const body = panel.querySelector(":scope > .panel__body");
+      if (!summary || !body) return;
+
+      const initiallyExpanded = panel.hasAttribute("open");
+      let inner = body.querySelector(":scope > .panel__body-inner");
+      if (!inner) {
+        inner = document.createElement("div");
+        inner.className = "panel__body-inner";
+        while (body.firstChild) inner.appendChild(body.firstChild);
+        body.appendChild(inner);
+      }
+
+      const contentId = `sidebar-panel-${index + 1}`;
+      body.id = contentId;
+      panel.open = true;
+      panel.classList.toggle("is-collapsed", !initiallyExpanded);
+      summary.setAttribute("aria-controls", contentId);
+      summary.setAttribute("aria-expanded", String(initiallyExpanded));
+      body.setAttribute("aria-hidden", String(!initiallyExpanded));
+
+      summary.addEventListener("click", (event) => {
+        event.preventDefault();
+        const expanded = panel.classList.contains("is-collapsed");
+        panel.classList.toggle("is-collapsed", !expanded);
+        summary.setAttribute("aria-expanded", String(expanded));
+        body.setAttribute("aria-hidden", String(!expanded));
+      });
+    });
+  }
+
+  toggleSidebar() {
+    const collapsed = this.elements.appShell.classList.toggle("sidebar-collapsed");
+    const expanded = !collapsed;
+    const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
+
+    this.elements.closeSidebar.setAttribute("aria-expanded", String(expanded));
+    this.elements.closeSidebar.setAttribute("aria-label", label);
+    this.elements.closeSidebar.title = label;
+    this.elements.sidebarToggleIcon.textContent = collapsed ? "›" : "‹";
+
+    requestAnimationFrame(() => this.visualizer.resize(true));
+    window.setTimeout(() => this.visualizer.resize(true), 190);
   }
 
   bindControls() {
@@ -99,7 +147,7 @@ export class UIController extends EventTarget {
     });
     this.elements.loopButton.addEventListener("click", () => this.loopEditor.open());
     this.elements.seek.addEventListener("input", () => this.audioEngine.seek(Number(this.elements.seek.value)));
-    this.elements.closeSidebar.addEventListener("click", () => this.elements.appShell.classList.add("sidebar-hidden"));
+    this.elements.closeSidebar.addEventListener("click", () => this.toggleSidebar());
     document.querySelectorAll("[data-camera]").forEach((button) => button.addEventListener("click", () => this.visualizer.setCameraPreset(button.dataset.camera)));
     document.querySelectorAll("[data-preset]").forEach((button) => button.addEventListener("click", () => { this.state.applyPreset(button.dataset.preset); this.toast(`${button.dataset.preset.toUpperCase()} preset loaded.`); }));
 
