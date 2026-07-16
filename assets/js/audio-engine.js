@@ -1,0 +1,220 @@
+import { clamp, lerp } from "./utils.js";
+
+export class AudioEngine extends EventTarget {
+  constructor(audioElement, state) {
+    super();
+    this.audio = audioElement;
+    this.state = state;
+    this.context = null;
+    this.source = null;
+    this.gain = null;
+    this.analyser = null;
+    this.recordDestination = null;
+    this.frequencyData = new Uint8Array(1024);
+    this.waveformData = new Uint8Array(2048);
+    this.objectUrl = "";
+    this.file = null;
+    this.averageEnergy = 0.08;
+    this.lastBeatAt = 0;
+    this.demoPhase = 0;
+    this.metrics = this.createEmptyMetrics();
+    this.bindAudioEvents();
+  }
+
+  createEmptyMetrics() {
+    return { energy: 0, rms: 0, peak: 0, bass: 0, mid: 0, treble: 0, centroid: 0, beat: 0, frequencyData: this.frequencyData, waveformData: this.waveformData };
+  }
+
+  bindAudioEvents() {
+    this.audio.addEventListener("play", () => this.dispatchEvent(new Event("playback")));
+    this.audio.addEventListener("pause", () => this.dispatchEvent(new Event("playback")));
+    this.audio.addEventListener("ended", () => this.dispatchEvent(new Event("playback")));
+    this.audio.addEventListener("timeupdate", () => this.dispatchEvent(new Event("time")));
+    this.audio.addEventListener("loadedmetadata", () => this.dispatchEvent(new Event("metadata")));
+  }
+
+  async ensureGraph() {
+    if (this.context) {
+      if (this.context.state === "suspended") await this.context.resume();
+      return;
+    }
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error("Web Audio API is unavailable in this browser.");
+    this.context = new AudioContextClass();
+    this.source = this.context.createMediaElementSource(this.audio);
+    this.gain = this.context.createGain();
+    this.analyser = this.context.createAnalyser();
+    this.recordDestination = this.context.createMediaStreamDestination();
+    this.analyser.fftSize = 2048;
+    this.analyser.minDecibels = -95;
+    this.analyser.maxDecibels = -10;
+    this.analyser.smoothingTimeConstant = this.state.get("smoothing");
+    this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+    this.waveformData = new Uint8Array(this.analyser.fftSize);
+    this.source.connect(this.gain);
+    this.gain.connect(this.analyser);
+    this.analyser.connect(this.context.destination);
+    this.gain.connect(this.recordDestination);
+    this.setVolume(this.state.get("volume"));
+  }
+
+  async loadFile(file) {
+    const supportedExtension = /\.(wav|mp3|m4a|aac|flac|ogg|opus)$/i.test(file?.name || "");
+    if (!(file instanceof File) || (!file.type.startsWith("audio/") && !supportedExtension)) {
+      throw new Error("Choose a supported audio file.");
+    }
+    this.file = file;
+    if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+    this.objectUrl = URL.createObjectURL(file);
+    this.audio.pause();
+    const metadataReady = new Promise((resolve, reject) => {
+      const onReady = () => { cleanup(); resolve(); };
+      const onError = () => { cleanup(); reject(new Error("The browser could not decode this audio file.")); };
+      const cleanup = () => {
+        this.audio.removeEventListener("loadedmetadata", onReady);
+        this.audio.removeEventListener("error", onError);
+      };
+      this.audio.addEventListener("loadedmetadata", onReady, { once: true });
+      this.audio.addEventListener("error", onError, { once: true });
+    });
+    this.audio.src = this.objectUrl;
+    this.audio.load();
+    await metadataReady;
+    await this.ensureGraph();
+    this.dispatchEvent(new CustomEvent("file", { detail: file }));
+  }
+
+  async togglePlayback() {
+    if (!this.file) {
+      this.state.set("demoMode", !this.state.get("demoMode"));
+      return;
+    }
+    await this.ensureGraph();
+    if (this.audio.paused) await this.audio.play();
+    else this.audio.pause();
+  }
+
+  async play() {
+    if (!this.file) return;
+    await this.ensureGraph();
+    await this.audio.play();
+  }
+
+  pause() {
+    this.audio.pause();
+  }
+
+  seek(seconds) {
+    if (!this.file || !Number.isFinite(this.audio.duration)) return;
+    this.audio.currentTime = clamp(seconds, 0, this.audio.duration);
+  }
+
+  setVolume(value) {
+    const volume = clamp(Number(value), 0, 1);
+    if (this.gain) this.gain.gain.setTargetAtTime(volume, this.context.currentTime, 0.01);
+    this.audio.volume = 1;
+  }
+
+  setLoop(enabled) {
+    this.audio.loop = Boolean(enabled);
+  }
+
+  setSmoothing(value) {
+    if (this.analyser) this.analyser.smoothingTimeConstant = clamp(Number(value), 0, 0.99);
+  }
+
+  getRecordStream() {
+    return this.recordDestination?.stream || null;
+  }
+
+  update(delta, elapsed) {
+    const hasActiveAudio = Boolean(this.file && this.analyser && !this.audio.paused);
+    if (!hasActiveAudio) {
+      this.metrics = this.state.get("demoMode") ? this.updateDemo(delta, elapsed) : this.createEmptyMetrics();
+      return this.metrics;
+    }
+
+    this.analyser.getByteFrequencyData(this.frequencyData);
+    this.analyser.getByteTimeDomainData(this.waveformData);
+    const sensitivity = this.state.get("sensitivity");
+    const sampleRate = this.context.sampleRate;
+    const binHz = sampleRate / this.analyser.fftSize;
+    const averageBand = (lowHz, highHz) => {
+      const start = Math.max(0, Math.floor(lowHz / binHz));
+      const end = Math.min(this.frequencyData.length, Math.ceil(highHz / binHz));
+      let sum = 0;
+      for (let index = start; index < end; index += 1) sum += this.frequencyData[index] / 255;
+      return end > start ? sum / (end - start) : 0;
+    };
+
+    let energy = 0;
+    let weighted = 0;
+    let weightTotal = 0;
+    let peak = 0;
+    for (let index = 0; index < this.frequencyData.length; index += 1) {
+      const value = this.frequencyData[index] / 255;
+      energy += value;
+      peak = Math.max(peak, value);
+      weighted += index * value;
+      weightTotal += value;
+    }
+    energy = (energy / this.frequencyData.length) * sensitivity;
+    let squareSum = 0;
+    for (let index = 0; index < this.waveformData.length; index += 1) {
+      const value = (this.waveformData[index] - 128) / 128;
+      squareSum += value * value;
+    }
+    const rms = Math.sqrt(squareSum / this.waveformData.length) * sensitivity;
+    this.averageEnergy = lerp(this.averageEnergy, energy, 0.025);
+    const now = performance.now() / 1000;
+    const beatDetected = energy > this.averageEnergy * 1.42 && energy > 0.09 && now - this.lastBeatAt > 0.17;
+    if (beatDetected) this.lastBeatAt = now;
+    const previousBeat = this.metrics.beat || 0;
+    const beat = beatDetected ? 1 : Math.max(0, previousBeat - delta * 4.8);
+
+    this.metrics = {
+      energy: clamp(energy, 0, 2.5),
+      rms: clamp(rms, 0, 2.5),
+      peak,
+      bass: clamp(averageBand(20, 250) * sensitivity, 0, 2.5),
+      mid: clamp(averageBand(250, 2000) * sensitivity, 0, 2.5),
+      treble: clamp(averageBand(2000, 16000) * sensitivity, 0, 2.5),
+      centroid: weightTotal ? weighted / weightTotal / this.frequencyData.length : 0,
+      beat,
+      frequencyData: this.frequencyData,
+      waveformData: this.waveformData,
+    };
+    return this.metrics;
+  }
+
+  updateDemo(delta, elapsed) {
+    this.demoPhase += delta;
+    const pulse = (Math.sin(elapsed * 2.15) + 1) * 0.5;
+    const bass = 0.18 + Math.pow(pulse, 5) * 0.72;
+    const mid = 0.2 + (Math.sin(elapsed * 1.17 + 1.4) + 1) * 0.17;
+    const treble = 0.12 + (Math.sin(elapsed * 3.7 + 0.2) + 1) * 0.12;
+    const beat = pulse > 0.965 ? 1 : Math.max(0, (this.metrics.beat || 0) - delta * 4.2);
+    for (let index = 0; index < this.frequencyData.length; index += 1) {
+      const falloff = Math.exp(-index / 180);
+      const ripple = 0.55 + 0.45 * Math.sin(index * 0.045 + elapsed * 4);
+      this.frequencyData[index] = Math.round(clamp((bass * falloff + mid * 0.35 * ripple + treble * 0.18) * 255, 0, 255));
+    }
+    for (let index = 0; index < this.waveformData.length; index += 1) {
+      const phase = index / this.waveformData.length * Math.PI * 12;
+      this.waveformData[index] = Math.round(128 + Math.sin(phase + elapsed * 5) * (20 + bass * 34));
+    }
+    return {
+      energy: (bass + mid + treble) / 3,
+      rms: bass * 0.62,
+      peak: Math.max(bass, mid, treble),
+      bass, mid, treble, centroid: 0.36 + treble * 0.18, beat,
+      frequencyData: this.frequencyData,
+      waveformData: this.waveformData,
+    };
+  }
+
+  destroy() {
+    if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+    this.context?.close();
+  }
+}
