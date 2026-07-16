@@ -1,3 +1,4 @@
+import { LoopEditor } from "./loop-editor.js";
 import { createToast, formatBytes, formatTime, getExtension } from "./utils.js";
 
 const CONTROL_FORMATS = {
@@ -20,12 +21,13 @@ export class UIController extends EventTarget {
     this.visualizer = visualizer;
     this.exporter = exporter;
     this.elements = this.collectElements();
+    this.loopEditor = new LoopEditor(audioEngine, state, (message, tone) => this.toast(message, tone));
     this.bindControls();
     this.syncAll();
   }
 
   collectElements() {
-    const ids = ["appShell","sidebar","closeSidebar","sidebarToggle","audioFile","audioStatus","audioFileLabel","trackName","trackDuration","trackFormat","trackSize","fileDrop","dropOverlay","audio","playPause","seek","currentTime","totalTime","modeReadout","viewportFrame","safeArea","fullscreen","fitView","fpsReadout","pointReadout","rendererInfo","drawCalls","gpuPoints","pixelRatio","qualityBadge","exportVideo","exportPng","exportSettings","importSettings","resetSettings","recordingStatus","exportProgress","exportProgressLabel","exportProgressValue","exportProgressBar","exportProgressMeta","toastStack"];
+    const ids = ["appShell","sidebar","closeSidebar","audioFile","audioStatus","audioFileLabel","trackName","trackDuration","trackFormat","trackSize","fileDrop","dropOverlay","audio","playPause","clearWaveform","loopButton","loopStatus","seek","currentTime","totalTime","viewportFrame","safeArea","fullscreen","fitView","fpsReadout","pointReadout","rendererInfo","drawCalls","gpuPoints","pixelRatio","qualityBadge","exportVideo","exportPng","exportSettings","importSettings","resetSettings","recordingStatus","exportProgress","exportProgressLabel","exportProgressValue","exportProgressBar","exportProgressMeta","toastStack"];
     const elements = {};
     for (const id of ids) elements[id] = document.getElementById(id);
     return elements;
@@ -57,8 +59,13 @@ export class UIController extends EventTarget {
     });
 
     this.elements.playPause.addEventListener("click", () => this.audioEngine.togglePlayback().catch((error) => this.toast(error.message, "error")));
+    this.elements.clearWaveform.addEventListener("click", () => {
+      this.audioEngine.clearWaveform();
+      this.dispatchEvent(new Event("clear-waveform"));
+      this.toast("Waveform history cleared.");
+    });
+    this.elements.loopButton.addEventListener("click", () => this.loopEditor.open());
     this.elements.seek.addEventListener("input", () => this.audioEngine.seek(Number(this.elements.seek.value)));
-    this.elements.sidebarToggle.addEventListener("click", () => this.elements.appShell.classList.toggle("sidebar-hidden"));
     this.elements.closeSidebar.addEventListener("click", () => this.elements.appShell.classList.add("sidebar-hidden"));
     this.elements.fullscreen.addEventListener("click", () => this.toggleFullscreen());
     this.elements.fitView.addEventListener("click", () => this.visualizer.fitView());
@@ -74,6 +81,7 @@ export class UIController extends EventTarget {
     this.audioEngine.addEventListener("file", (event) => this.updateTrack(event.detail));
     this.audioEngine.addEventListener("playback", () => this.syncPlayback());
     this.audioEngine.addEventListener("metadata", () => this.syncPlayback());
+    this.audioEngine.addEventListener("loopchange", () => this.syncLoop());
     this.exporter.addEventListener("start", (event) => this.showExportStart(event.detail));
     this.exporter.addEventListener("progress", (event) => this.showExportProgress(event.detail));
     this.exporter.addEventListener("finish", (event) => this.showExportFinish(event.detail));
@@ -104,6 +112,7 @@ export class UIController extends EventTarget {
     for (const [key, value] of Object.entries(this.state.settings)) this.syncControl(key, value);
     this.syncViewportFormat();
     this.syncPlayback();
+    this.syncLoop();
   }
 
   syncControl(key, value) {
@@ -133,13 +142,36 @@ export class UIController extends EventTarget {
   syncPlayback() {
     const audio = this.audioEngine.audio;
     const hasAudio = Boolean(this.audioEngine.file);
-    this.elements.playPause.textContent = hasAudio && !audio.paused ? "Ⅱ" : "▶";
+    this.elements.playPause.disabled = !hasAudio;
+    this.elements.clearWaveform.disabled = !hasAudio;
+    this.elements.seek.disabled = !hasAudio;
+    this.elements.playPause.textContent = hasAudio && !audio.paused ? "Pause" : "Play";
     this.elements.audioStatus.textContent = hasAudio ? (!audio.paused ? "PLAYING" : "READY") : this.state.get("demoMode") ? "DEMO" : "IDLE";
-    this.elements.modeReadout.textContent = hasAudio ? "AUDIO INPUT" : this.state.get("demoMode") ? "DEMO SIGNAL" : "STATIC FIELD";
     this.elements.currentTime.textContent = formatTime(hasAudio ? audio.currentTime : 0);
     this.elements.totalTime.textContent = formatTime(hasAudio ? audio.duration : 0);
     this.elements.seek.max = Number.isFinite(audio.duration) ? audio.duration : 1;
     if (!this.elements.seek.matches(":active")) this.elements.seek.value = hasAudio ? audio.currentTime : 0;
+    this.syncLoop();
+  }
+
+  syncLoop() {
+    const loop = this.audioEngine.getLoopState();
+    this.elements.loopButton.disabled = !loop.ready;
+    this.elements.loopButton.classList.toggle("loop-active", loop.enabled);
+    this.elements.loopButton.setAttribute("aria-pressed", String(loop.enabled));
+    if (!loop.ready) {
+      this.elements.loopStatus.textContent = "Load and analyze audio to create a loop.";
+      this.elements.loopStatus.dataset.tone = "idle";
+    } else if (!loop.enabled) {
+      this.elements.loopStatus.textContent = "Loop off.";
+      this.elements.loopStatus.dataset.tone = "idle";
+    } else if (loop.partial) {
+      this.elements.loopStatus.textContent = `Loop on · ${formatTime(loop.start)}–${formatTime(loop.end)} · ${loop.duration.toFixed(2)} s`;
+      this.elements.loopStatus.dataset.tone = "active";
+    } else {
+      this.elements.loopStatus.textContent = "Full-track loop enabled.";
+      this.elements.loopStatus.dataset.tone = "active";
+    }
   }
 
   updateTrack(file) {

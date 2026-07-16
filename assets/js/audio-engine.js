@@ -12,12 +12,20 @@ export class AudioEngine extends EventTarget {
     this.recordDestination = null;
     this.frequencyData = new Uint8Array(1024);
     this.waveformData = new Uint8Array(2048);
+    this.waveformData.fill(128);
     this.objectUrl = "";
     this.file = null;
+    this.decodedBuffer = null;
+    this.waveformPeaks = null;
     this.averageEnergy = 0.08;
     this.lastBeatAt = 0;
     this.demoPhase = 0;
     this.metrics = this.createEmptyMetrics();
+    this.loopStart = 0;
+    this.loopEnd = 0;
+    this.loopEnabled = false;
+    this.previewLoop = null;
+    this.loopWrapPending = false;
     this.bindAudioEvents();
   }
 
@@ -51,6 +59,7 @@ export class AudioEngine extends EventTarget {
     this.analyser.smoothingTimeConstant = this.state.get("smoothing");
     this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
     this.waveformData = new Uint8Array(this.analyser.fftSize);
+    this.waveformData.fill(128);
     this.source.connect(this.gain);
     this.gain.connect(this.analyser);
     this.analyser.connect(this.context.destination);
@@ -63,10 +72,19 @@ export class AudioEngine extends EventTarget {
     if (!(file instanceof File) || (!file.type.startsWith("audio/") && !supportedExtension)) {
       throw new Error("Choose a supported audio file.");
     }
+
     this.file = file;
+    this.decodedBuffer = null;
+    this.waveformPeaks = null;
+    this.previewLoop = null;
+    this.loopEnabled = false;
+    this.loopStart = 0;
+    this.loopEnd = 0;
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = URL.createObjectURL(file);
     this.audio.pause();
+    this.audio.loop = false;
+
     const metadataReady = new Promise((resolve, reject) => {
       const onReady = () => { cleanup(); resolve(); };
       const onError = () => { cleanup(); reject(new Error("The browser could not decode this audio file.")); };
@@ -77,21 +95,43 @@ export class AudioEngine extends EventTarget {
       this.audio.addEventListener("loadedmetadata", onReady, { once: true });
       this.audio.addEventListener("error", onError, { once: true });
     });
+
     this.audio.src = this.objectUrl;
     this.audio.load();
     await metadataReady;
     await this.ensureGraph();
+
+    try {
+      const bytes = await file.arrayBuffer();
+      this.decodedBuffer = await this.context.decodeAudioData(bytes.slice(0));
+      this.waveformPeaks = this.buildWaveformPeaks(this.decodedBuffer);
+    } catch (error) {
+      this.file = null;
+      this.audio.removeAttribute("src");
+      this.audio.load();
+      throw new Error(`Audio analysis failed: ${error.message}`);
+    }
+
+    this.loopStart = 0;
+    this.loopEnd = this.getDuration();
+    this.state.set("loopTrack", false);
+    this.clearWaveform({ notify: false });
     this.dispatchEvent(new CustomEvent("file", { detail: file }));
+    this.dispatchEvent(new Event("loopchange"));
   }
 
   async togglePlayback() {
-    if (!this.file) {
-      this.state.set("demoMode", !this.state.get("demoMode"));
-      return;
-    }
+    if (!this.file) return;
     await this.ensureGraph();
-    if (this.audio.paused) await this.audio.play();
-    else this.audio.pause();
+    if (this.audio.paused) {
+      const loop = this.getActiveLoopRange();
+      if (loop && (this.audio.currentTime < loop.start || this.audio.currentTime >= loop.end)) {
+        this.audio.currentTime = loop.start;
+      }
+      await this.audio.play();
+    } else {
+      this.audio.pause();
+    }
   }
 
   async play() {
@@ -104,6 +144,13 @@ export class AudioEngine extends EventTarget {
     this.audio.pause();
   }
 
+  stop() {
+    this.audio.pause();
+    const loop = this.getActiveLoopRange();
+    this.audio.currentTime = loop?.start || 0;
+    this.dispatchEvent(new Event("time"));
+  }
+
   seek(seconds) {
     if (!this.file || !Number.isFinite(this.audio.duration)) return;
     this.audio.currentTime = clamp(seconds, 0, this.audio.duration);
@@ -111,12 +158,124 @@ export class AudioEngine extends EventTarget {
 
   setVolume(value) {
     const volume = clamp(Number(value), 0, 1);
-    if (this.gain) this.gain.gain.setTargetAtTime(volume, this.context.currentTime, 0.01);
+    if (this.gain && this.context) this.gain.gain.setTargetAtTime(volume, this.context.currentTime, 0.01);
     this.audio.volume = 1;
   }
 
+  getDuration() {
+    const duration = this.decodedBuffer?.duration || this.audio.duration || 0;
+    return Number.isFinite(duration) ? duration : 0;
+  }
+
+  getLoopState() {
+    const duration = this.getDuration();
+    const start = clamp(this.loopStart || 0, 0, duration);
+    const end = clamp(this.loopEnd || duration, start, duration);
+    return {
+      ready: Boolean(this.decodedBuffer && duration > 0),
+      enabled: Boolean(this.loopEnabled),
+      start,
+      end,
+      duration: Math.max(0, end - start),
+      trackDuration: duration,
+      partial: Boolean(this.loopEnabled && end - start > 0.01 && end - start < duration - 0.01),
+    };
+  }
+
   setLoop(enabled) {
-    this.audio.loop = Boolean(enabled);
+    this.loopEnabled = Boolean(enabled && this.file);
+    const loop = this.getLoopState();
+    this.audio.loop = Boolean(loop.enabled && !loop.partial);
+    this.dispatchEvent(new Event("loopchange"));
+  }
+
+  setLoopRange(start, end, enabled = true) {
+    const duration = this.getDuration();
+    if (!duration) return;
+    const nextStart = clamp(Number(start) || 0, 0, duration);
+    const nextEnd = clamp(Number(end) || duration, nextStart, duration);
+    this.loopStart = nextStart;
+    this.loopEnd = nextEnd;
+    this.loopEnabled = Boolean(enabled && nextEnd - nextStart > 0.01);
+    this.audio.loop = Boolean(this.loopEnabled && nextEnd - nextStart >= duration - 0.01);
+    this.state.set("loopTrack", this.loopEnabled);
+    if (this.loopEnabled && (this.audio.currentTime < nextStart || this.audio.currentTime >= nextEnd)) {
+      this.audio.currentTime = nextStart;
+    }
+    this.dispatchEvent(new Event("loopchange"));
+  }
+
+  clearLoop() {
+    const duration = this.getDuration();
+    this.loopStart = 0;
+    this.loopEnd = duration;
+    this.loopEnabled = false;
+    this.audio.loop = false;
+    this.state.set("loopTrack", false);
+    this.dispatchEvent(new Event("loopchange"));
+  }
+
+  setPreviewLoop(start, end, enabled = true) {
+    const duration = this.getDuration();
+    if (!duration || !enabled) {
+      this.previewLoop = null;
+      return;
+    }
+    const nextStart = clamp(Number(start) || 0, 0, duration);
+    const nextEnd = clamp(Number(end) || duration, nextStart, duration);
+    this.previewLoop = nextEnd - nextStart > 0.01 ? { start: nextStart, end: nextEnd } : null;
+    this.audio.loop = false;
+  }
+
+  clearPreviewLoop() {
+    this.previewLoop = null;
+    const loop = this.getLoopState();
+    this.audio.loop = Boolean(loop.enabled && !loop.partial);
+  }
+
+  getActiveLoopRange() {
+    if (this.previewLoop) return this.previewLoop;
+    const loop = this.getLoopState();
+    return loop.enabled ? { start: loop.start, end: loop.end } : null;
+  }
+
+  enforceLoop() {
+    const range = this.getActiveLoopRange();
+    if (!range || this.audio.paused || this.loopWrapPending) return;
+    if (this.audio.currentTime < range.start - 0.03 || this.audio.currentTime >= range.end - 0.012) {
+      const overflow = this.audio.currentTime >= range.end ? Math.max(0, this.audio.currentTime - range.end) : 0;
+      const target = clamp(range.start + overflow, range.start, Math.max(range.start, range.end - 0.001));
+      this.loopWrapPending = true;
+      this.audio.currentTime = target;
+      window.setTimeout(() => { this.loopWrapPending = false; }, 0);
+    }
+  }
+
+  buildWaveformPeaks(buffer, peakCount = 4096) {
+    if (!buffer || buffer.length <= 0) return null;
+    const peaks = new Float32Array(peakCount);
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index));
+    const samplesPerPeak = Math.max(1, buffer.length / peakCount);
+    for (let peakIndex = 0; peakIndex < peakCount; peakIndex += 1) {
+      const start = Math.floor(peakIndex * samplesPerPeak);
+      const end = Math.min(buffer.length, Math.max(start + 1, Math.floor((peakIndex + 1) * samplesPerPeak)));
+      const stride = Math.max(1, Math.floor((end - start) / 160));
+      let peak = 0;
+      for (let sampleIndex = start; sampleIndex < end; sampleIndex += stride) {
+        for (const channel of channels) peak = Math.max(peak, Math.abs(channel[sampleIndex] || 0));
+      }
+      peaks[peakIndex] = peak;
+    }
+    return peaks;
+  }
+
+  clearWaveform({ notify = true } = {}) {
+    this.frequencyData.fill(0);
+    this.waveformData.fill(128);
+    this.averageEnergy = 0.08;
+    this.lastBeatAt = 0;
+    this.metrics = this.createEmptyMetrics();
+    if (notify) this.dispatchEvent(new Event("waveformclear"));
   }
 
   setSmoothing(value) {
@@ -128,9 +287,10 @@ export class AudioEngine extends EventTarget {
   }
 
   update(delta, elapsed) {
+    this.enforceLoop();
     const hasActiveAudio = Boolean(this.file && this.analyser && !this.audio.paused);
     if (!hasActiveAudio) {
-      this.metrics = this.state.get("demoMode") ? this.updateDemo(delta, elapsed) : this.createEmptyMetrics();
+      this.metrics = this.state.get("demoMode") && !this.file ? this.updateDemo(delta, elapsed) : this.createEmptyMetrics();
       return this.metrics;
     }
 

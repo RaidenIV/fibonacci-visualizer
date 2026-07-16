@@ -247,6 +247,13 @@ export class FibonacciVisualizer {
     this.configureCameraForSize(this.camera, this.lastWidth || this.frame.clientWidth, this.lastHeight || this.frame.clientHeight);
   }
 
+  clearWaveform() {
+    this.rotation = 0;
+    this.audioMultiplier = 0;
+    this.uniforms.uRotation.value = 0;
+    this.uniforms.uAudioMultiplier.value = 0;
+  }
+
   getStats() {
     return {
       points: Math.max(1, this.currentPointCount - 1),

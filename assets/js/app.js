@@ -39,6 +39,7 @@ class FibonacciAudioFieldApp {
     this.audioEngine.setLoop(this.state.get("loopTrack"));
     this.audioEngine.setVolume(this.state.get("volume"));
     this.ui.addEventListener("export-png", () => this.exporter.exportPng(this.metrics, this.getMeta()));
+    this.ui.addEventListener("clear-waveform", () => this.visualizer.clearWaveform());
   }
 
   bindLifecycle() {

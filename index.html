@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./loop-editor.css" />
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -33,18 +34,29 @@
               <small class="file-drop__copy">Choose or drop WAV, MP3, M4A, FLAC, OGG, or OPUS</small>
             </label>
             <div class="track-card">
-              <div class="track-card__art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
               <div class="track-card__meta">
                 <strong id="trackName">Synthetic demo signal</strong>
                 <span><b id="trackFormat">INTERNAL</b> · <b id="trackSize">0 B</b> · <b id="trackDuration">∞ DEMO</b></span>
               </div>
             </div>
+            <div class="transport audio-transport">
+              <button class="play-button" disabled id="playPause" type="button">Play</button>
+              <button disabled id="clearWaveform" type="button">Clear Waveform</button>
+            </div>
+            <div class="control timeline-row">
+              <span class="time-label" id="currentTime">0:00</span>
+              <input disabled id="seek" max="1" min="0" step="0.001" type="range" value="0" aria-label="Seek" />
+              <span class="time-label" id="totalTime">0:00</span>
+            </div>
+            <div class="control loop-control">
+              <button aria-pressed="false" disabled id="loopButton" type="button">Loop</button>
+              <div class="loop-status" data-tone="idle" id="loopStatus">Load and analyze audio to create a loop.</div>
+            </div>
             <div class="control">
               <div class="control__row"><label for="volume">Volume</label><output id="volumeValue">100%</output></div>
               <input id="volume" type="range" min="0" max="1" step="0.01" value="1" />
             </div>
-            <div class="toggle-grid">
-              <label class="switch-row"><span>Loop Track</span><input id="loopTrack" type="checkbox" /><i></i></label>
+            <div class="toggle-grid toggle-grid--single">
               <label class="switch-row"><span>Demo Without Audio</span><input id="demoMode" type="checkbox" checked /><i></i></label>
             </div>
           </div>
@@ -204,8 +216,6 @@
 
     <main class="workspace">
       <div class="workspace__topbar">
-        <button class="icon-button" id="sidebarToggle" type="button" aria-label="Open controls">☰</button>
-        <div class="workspace__title"><span class="live-dot"></span><strong>FIBONACCI AUDIO FIELD</strong><small id="modeReadout">DEMO SIGNAL</small></div>
         <div class="workspace__actions"><button class="toolbar-button" id="fitView" type="button">FIT</button><button class="toolbar-button" id="fullscreen" type="button">FULLSCREEN</button></div>
       </div>
 
@@ -219,12 +229,6 @@
           </div>
           <div class="corner-label corner-label--tl"><span>SYS</span><strong>PYTHON 2D // PHYLLOTAXIS</strong></div>
           <div class="corner-label corner-label--tr"><span id="fpsReadout">60 FPS</span><strong id="pointReadout">2,400 PTS</strong></div>
-          <div class="transport">
-            <button id="playPause" class="transport__play" type="button" aria-label="Play audio">▶</button>
-            <span id="currentTime">0:00</span>
-            <input id="seek" type="range" min="0" max="1" step="0.001" value="0" aria-label="Seek" />
-            <span id="totalTime">0:00</span>
-          </div>
         </div>
       </section>
 
