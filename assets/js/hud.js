@@ -6,9 +6,9 @@ const COLORS = Object.freeze({
   accent: "#60a5fa",
   accentStrong: "#3b82f6",
   accentSoft: "rgba(96,165,250,.28)",
-  text: "rgba(255,255,255,.94)",
-  muted: "rgba(255,255,255,.52)",
-  subtle: "rgba(255,255,255,.34)",
+  text: "#ffffff",
+  muted: "#ffffff",
+  subtle: "#ffffff",
   border: "rgba(255,255,255,.12)",
   borderSoft: "rgba(255,255,255,.07)",
   grid: "rgba(255,255,255,.075)",
@@ -184,8 +184,6 @@ export class HudRenderer {
     ctx.lineWidth = baseLineWidth;
     ctx.stroke();
 
-    drawPanel(ctx, layout.metadata, radius, "rgba(0,0,0,.58)", COLORS.borderSoft);
-
     const settings = this.state.settings;
     const viewportName = settings.viewportFormat === "landscape" ? "16:9 LANDSCAPE"
       : settings.viewportFormat === "portrait" ? "9:16 PORTRAIT"
@@ -208,8 +206,8 @@ export class HudRenderer {
         ? `700 ${layout.fontSize * 1.18}px ${HUD_FONT}`
         : index === 1
           ? `600 ${layout.fontSize * 0.92}px ${HUD_FONT}`
-          : `500 ${layout.fontSize * 0.82}px ${HUD_MONO}`;
-      ctx.fillStyle = index === 0 ? COLORS.text : index === 1 ? COLORS.accent : COLORS.muted;
+          : `500 ${layout.fontSize * 0.82}px ${HUD_FONT}`;
+      ctx.fillStyle = COLORS.text;
       ctx.fillText(lines[index], layout.metadataX, layout.metadataY + index * layout.lineStep);
     }
 
