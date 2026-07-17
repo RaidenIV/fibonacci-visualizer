@@ -107,6 +107,13 @@
           <summary><span>Audio Reactivity</span><strong>FFT</strong></summary>
           <div class="panel__body">
             <div class="control">
+              <div class="control__row"><label for="reactionMode">Reaction Mode</label></div>
+              <select id="reactionMode">
+                <option value="unified">Unified (Original)</option>
+                <option value="bands">Frequency Bands (Low / Mid / High)</option>
+              </select>
+            </div>
+            <div class="control">
               <div class="control__row"><label for="sensitivity">Sensitivity</label><span class="range-value-editor"><input aria-label="Sensitivity value" class="range-value-input" data-decimals="2" data-display-multiplier="1" data-range-id="sensitivity" id="sensitivityValue" min="0.1" max="5" step="0.05" type="number" value="1.60" /><span aria-hidden="true" class="range-value-suffix">×</span></span></div>
               <input id="sensitivity" type="range" min="0.1" max="5" step="0.05" value="1.6" />
             </div>

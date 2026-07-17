@@ -21,20 +21,60 @@ const vertexShader = `
   uniform float uAudioMultiplier;
   uniform float uAudioScale;
   uniform float uAudioSize;
+  uniform float uAudioRotation;
+  uniform float uReactionMode;
+  uniform float uBass;
+  uniform float uMid;
+  uniform float uTreble;
+  uniform float uTime;
   uniform float uViewportScale;
   varying float vIndex;
 
   void main() {
     float index = aIndex + 1.0;
     float normalized = index / max(uCount, 1.0);
-    float dynamicAngle = uGoldenAngle + uAudioMultiplier * (1.0 / 128.0);
+    float unifiedAudio = uAudioMultiplier * (1.0 - uReactionMode);
+    float dynamicAngle = uGoldenAngle + unifiedAudio * (1.0 / 128.0);
     float angle = index * dynamicAngle + uRotation;
-    float scale = PYTHON_BASE_SCALE_PLACEHOLDER * uSpacing + uAudioMultiplier * uAudioScale;
-    float radius = scale * sqrt(index) * (1.0 + uWarp * sin(uAudioMultiplier * index / 50.0));
+    float scale = PYTHON_BASE_SCALE_PLACEHOLDER * uSpacing + unifiedAudio * uAudioScale;
+    float radius = scale * sqrt(index) * (1.0 + uWarp * sin(unifiedAudio * index / 50.0));
+    float pointBoost = unifiedAudio * uAudioSize * 5.0;
+
+    if (uReactionMode > 0.5) {
+      float lowBand = 1.0 - step(0.333333, normalized);
+      float highBand = step(0.666667, normalized);
+      float midBand = 1.0 - lowBand - highBand;
+      float low = clamp(uBass, 0.0, 2.5);
+      float mid = clamp(uMid, 0.0, 2.5);
+      float high = clamp(uTreble, 0.0, 2.5);
+
+      // Low frequencies drive the inner field with broad clockwise rotation
+      // and a strong breathing expansion.
+      float lowAngle = low * (0.48 + 0.06 * sin(uTime * 1.25));
+      float lowRadius = 1.0 + low * 0.15 * uAudioScale;
+
+      // Mid frequencies counter-rotate the middle field and create a
+      // travelling radial ripple through the spiral.
+      float midPhase = index * 0.072 + uTime * 2.15;
+      float midAngle = -mid * 0.36 + sin(midPhase) * mid * 0.12;
+      float midRadius = 1.0 + sin(midPhase) * mid * 0.105 * uAudioScale;
+
+      // High frequencies shimmer through the outer field with fast orbital
+      // motion and a tighter radial vibration.
+      float highPhase = index * 0.235 + uTime * 7.5;
+      float highAngle = sin(highPhase) * high * 0.22;
+      float highRadius = 1.0 + cos(highPhase * 1.17) * high * 0.055 * uAudioScale;
+
+      angle += (lowBand * lowAngle + midBand * midAngle + highBand * highAngle) * uAudioRotation;
+      radius *= max(0.15, lowBand * lowRadius + midBand * midRadius + highBand * highRadius);
+      radius += highBand * sin(highPhase * 1.63) * high * 2.4 * uAudioScale;
+      pointBoost = (lowBand * low * 1.35 + midBand * mid * 2.1 + highBand * high * 3.2) * uAudioSize;
+    }
+
     vec2 position = vec2(cos(angle), -sin(angle)) * radius;
 
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 0.0, 1.0);
-    gl_PointSize = max(1.0, 2.0 * floor(uPointSize + uAudioMultiplier * uAudioSize * 5.0) * uViewportScale);
+    gl_PointSize = max(1.0, 2.0 * floor(uPointSize + pointBoost) * uViewportScale);
     vIndex = normalized;
   }
 `.replace("PYTHON_BASE_SCALE_PLACEHOLDER", PYTHON_BASE_SCALE.toFixed(1));
@@ -89,6 +129,7 @@ export class FibonacciVisualizer {
     this.rotation = 0;
     this.currentPointCount = state.get("pointCount");
     this.audioMultiplier = 0;
+    this.bandLevels = { bass: 0, mid: 0, treble: 0 };
     this.lastWidth = 0;
     this.lastHeight = 0;
     this.paletteTexture = createPaletteTexture(THREE, state.get("palette"));
@@ -116,6 +157,11 @@ export class FibonacciVisualizer {
       uAudioMultiplier: { value: 0 },
       uAudioScale: { value: this.state.get("audioScale") },
       uAudioSize: { value: this.state.get("audioSize") },
+      uAudioRotation: { value: this.state.get("audioRotation") },
+      uReactionMode: { value: this.state.get("reactionMode") === "bands" ? 1 : 0 },
+      uBass: { value: 0 },
+      uMid: { value: 0 },
+      uTreble: { value: 0 },
       uViewportScale: { value: 1 },
       uPalette: { value: this.paletteTexture },
       uColorCycle: { value: this.state.get("colorCycle") },
@@ -151,6 +197,8 @@ export class FibonacciVisualizer {
       case "warp": this.uniforms.uWarp.value = value; break;
       case "audioScale": this.uniforms.uAudioScale.value = value; break;
       case "audioSize": this.uniforms.uAudioSize.value = value; break;
+      case "audioRotation": this.uniforms.uAudioRotation.value = value; break;
+      case "reactionMode": this.uniforms.uReactionMode.value = value === "bands" ? 1 : 0; break;
       case "colorCycle": this.uniforms.uColorCycle.value = value; break;
       case "opacity": this.uniforms.uOpacity.value = value; break;
       case "shape": this.uniforms.uShape.value = value === "square" ? 1 : value === "triangle" ? 2 : 0; break;
@@ -188,13 +236,23 @@ export class FibonacciVisualizer {
     );
     this.field.geometry.setDrawRange(0, Math.max(1, this.currentPointCount - 1));
 
+    const bandFollow = 1 - Math.exp(-delta * 12);
+    this.bandLevels.bass += (clamp(metrics.bass || 0, 0, 2.5) - this.bandLevels.bass) * bandFollow;
+    this.bandLevels.mid += (clamp(metrics.mid || 0, 0, 2.5) - this.bandLevels.mid) * bandFollow;
+    this.bandLevels.treble += (clamp(metrics.treble || 0, 0, 2.5) - this.bandLevels.treble) * bandFollow;
+
     this.rotation += delta * settings.rotationSpeed;
-    this.rotation += this.audioMultiplier * PYTHON_ROTATION_STEP * PYTHON_FRAME_RATE * delta * settings.audioRotation;
+    if (settings.reactionMode !== "bands") {
+      this.rotation += this.audioMultiplier * PYTHON_ROTATION_STEP * PYTHON_FRAME_RATE * delta * settings.audioRotation;
+    }
 
     this.uniforms.uCount.value = this.currentPointCount;
     this.uniforms.uTime.value = elapsed;
     this.uniforms.uRotation.value = this.rotation;
     this.uniforms.uAudioMultiplier.value = this.audioMultiplier;
+    this.uniforms.uBass.value = this.bandLevels.bass;
+    this.uniforms.uMid.value = this.bandLevels.mid;
+    this.uniforms.uTreble.value = this.bandLevels.treble;
   }
 
   render() {
@@ -250,8 +308,14 @@ export class FibonacciVisualizer {
   clearWaveform() {
     this.rotation = 0;
     this.audioMultiplier = 0;
+    this.bandLevels.bass = 0;
+    this.bandLevels.mid = 0;
+    this.bandLevels.treble = 0;
     this.uniforms.uRotation.value = 0;
     this.uniforms.uAudioMultiplier.value = 0;
+    this.uniforms.uBass.value = 0;
+    this.uniforms.uMid.value = 0;
+    this.uniforms.uTreble.value = 0;
   }
 
   getStats() {

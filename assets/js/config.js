@@ -12,6 +12,7 @@ export const DEFAULTS = Object.freeze({
   depthFrequency: 0.045,
   sensitivity: 1.6,
   smoothing: 0.78,
+  reactionMode: "unified",
   audioScale: 1,
   audioDensity: 1,
   audioSize: 1,

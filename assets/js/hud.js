@@ -192,7 +192,7 @@ export class HudRenderer {
     const lines = [
       "FIBONACCI AUDIO FIELD",
       truncateFileName(meta.fileName, maximumFileLength),
-      `MODE  ${meta.mode}`,
+      `MODE  ${meta.mode} / REACT ${formatSettingName(settings.reactionMode)}`,
       `VIEW  ${viewportName} / ORTHOGRAPHIC 2D`,
       `FIELD ${formatSettingName(settings.shape)} / ${formatSettingName(settings.palette)}`,
       `POINTS ${meta.points.toLocaleString()} / BASE ${Number(settings.pointCount).toLocaleString()}`,
