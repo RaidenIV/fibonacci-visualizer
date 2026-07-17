@@ -1,6 +1,20 @@
 import { clamp } from "./utils.js";
 
-const HUD_FONT = '"Cozette", "CozetteVector", ui-monospace, SFMono-Regular, Consolas, monospace';
+const HUD_FONT = '"Rajdhani", sans-serif';
+const HUD_MONO = '"IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace';
+const COLORS = Object.freeze({
+  accent: "#60a5fa",
+  accentStrong: "#3b82f6",
+  accentSoft: "rgba(96,165,250,.28)",
+  text: "rgba(255,255,255,.94)",
+  muted: "rgba(255,255,255,.52)",
+  subtle: "rgba(255,255,255,.34)",
+  border: "rgba(255,255,255,.12)",
+  borderSoft: "rgba(255,255,255,.07)",
+  grid: "rgba(255,255,255,.075)",
+  panel: "rgba(0,0,0,.66)",
+  panelDeep: "rgba(3,7,18,.76)",
+});
 
 function truncateFileName(fileName, maximumLength) {
   const normalized = String(fileName || "NO AUDIO FILE").toUpperCase();
@@ -16,6 +30,36 @@ function formatSettingName(value) {
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/[-_]+/g, " ")
     .toUpperCase();
+}
+
+function roundedRectPath(ctx, x, y, width, height, radius) {
+  const r = Math.max(0, Math.min(radius, width * 0.5, height * 0.5));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawPanel(ctx, rectangle, radius, fill = COLORS.panel, stroke = COLORS.border) {
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,.42)";
+  ctx.shadowBlur = Math.max(6, radius * 1.65);
+  ctx.shadowOffsetY = Math.max(2, radius * 0.35);
+  roundedRectPath(ctx, rectangle.x, rectangle.y, rectangle.width, rectangle.height, radius);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = Math.max(0.7, rectangle.width / 900);
+  ctx.stroke();
+  ctx.restore();
 }
 
 export class HudRenderer {
@@ -74,13 +118,14 @@ export class HudRenderer {
     const portrait = format === "portrait" || ratio < 0.75;
     const square = format === "square" || (!portrait && ratio >= 0.75 && ratio <= 1.25);
     const preset = square
-      ? { graphWidth: 14, graphHeight: 4.5, metadataX: 2.5, metadataY: 2.5, textSize: 1.25 }
+      ? { graphWidth: 14, graphHeight: 4.5, metadataWidth: 55, metadataX: 2.5, metadataY: 2.5, textSize: 1.18 }
       : portrait
-        ? { graphWidth: 22, graphHeight: 4.5, metadataX: 2.75, metadataY: 1.5, textSize: 1.5 }
-        : { graphWidth: 10, graphHeight: 4.5, metadataX: 1.5, metadataY: 2.5, textSize: 0.75 };
-    const fontSize = Math.max(6, width * (preset.textSize / 100));
+        ? { graphWidth: 22, graphHeight: 4.5, metadataWidth: 66, metadataX: 2.75, metadataY: 1.5, textSize: 1.38 }
+        : { graphWidth: 10, graphHeight: 4.5, metadataWidth: 33, metadataX: 1.5, metadataY: 2.5, textSize: 0.70 };
+    const fontSize = Math.max(7, width * (preset.textSize / 100));
     const lineStep = Math.max(fontSize + 2, fontSize * 1.34);
     const pad = Math.max(10, Math.min(width, height) * 0.018);
+    const cardPad = Math.max(8, fontSize * 0.85);
     const graphWidth = width * (preset.graphWidth / 100);
     const graphHeight = height * (preset.graphHeight / 100);
     const labelGap = Math.max(4, fontSize * 0.55);
@@ -95,52 +140,51 @@ export class HudRenderer {
         isRight,
       };
     };
+    const metadataX = width * (preset.metadataX / 100);
+    const metadataY = height * (preset.metadataY / 100);
     return {
       fontSize,
       lineStep,
-      metadataX: width * (preset.metadataX / 100),
-      metadataY: height * (preset.metadataY / 100),
+      metadataX,
+      metadataY,
+      metadata: {
+        x: metadataX - cardPad,
+        y: metadataY - cardPad,
+        width: Math.min(width * (preset.metadataWidth / 100), width - metadataX - pad),
+        height: lineStep * 9 + cardPad * 2,
+      },
+      cardPad,
       pad,
       labelGap,
       frequency: graphRect("top-right"),
       waveform: graphRect("bottom-left"),
       levels: graphRect("bottom-right"),
       square,
+      portrait,
     };
   }
 
   drawToContext(ctx, width, height, metrics, meta, clear = false) {
     if (clear) ctx.clearRect(0, 0, width, height);
     const layout = this.getLayout(width, height);
-    const line = "rgba(255,255,255,.90)";
-    const faint = "rgba(255,255,255,.18)";
-    const veryFaint = "rgba(255,255,255,.08)";
-    const baseLineWidth = Math.max(0.6, width / 1920);
+    const baseLineWidth = Math.max(0.7, width / 1920);
+    const radius = Math.max(6, Math.min(width, height) * 0.008);
 
     ctx.save();
-    ctx.lineWidth = baseLineWidth;
-    ctx.strokeStyle = line;
-    ctx.fillStyle = line;
-    ctx.font = `${layout.fontSize}px ${HUD_FONT}`;
     ctx.textBaseline = "top";
 
-    ctx.strokeRect(layout.pad, layout.pad, width - layout.pad * 2, height - layout.pad * 2);
+    const outer = {
+      x: layout.pad,
+      y: layout.pad,
+      width: width - layout.pad * 2,
+      height: height - layout.pad * 2,
+    };
+    roundedRectPath(ctx, outer.x, outer.y, outer.width, outer.height, radius * 1.15);
+    ctx.strokeStyle = "rgba(96,165,250,.26)";
+    ctx.lineWidth = baseLineWidth;
+    ctx.stroke();
 
-    for (let index = 0; index <= 10; index += 1) {
-      const x = layout.pad + ((width - layout.pad * 2) * index) / 10;
-      const y = layout.pad + ((height - layout.pad * 2) * index) / 10;
-      const tickSize = index % 5 === 0 ? 7 : 4;
-      ctx.beginPath();
-      ctx.moveTo(x, layout.pad);
-      ctx.lineTo(x, layout.pad + tickSize);
-      ctx.moveTo(x, height - layout.pad);
-      ctx.lineTo(x, height - layout.pad - tickSize);
-      ctx.moveTo(layout.pad, y);
-      ctx.lineTo(layout.pad + tickSize, y);
-      ctx.moveTo(width - layout.pad, y);
-      ctx.lineTo(width - layout.pad - tickSize, y);
-      ctx.stroke();
-    }
+    drawPanel(ctx, layout.metadata, radius, "rgba(0,0,0,.58)", COLORS.borderSoft);
 
     const settings = this.state.settings;
     const viewportName = settings.viewportFormat === "landscape" ? "16:9 LANDSCAPE"
@@ -148,137 +192,132 @@ export class HudRenderer {
         : settings.viewportFormat === "square" ? "1:1 SQUARE" : "RESPONSIVE";
     const maximumFileLength = layout.square ? 30 : 38;
     const lines = [
-      [0, "SYS/FIBONACCI AUDIO FIELD"],
-      [1, truncateFileName(meta.fileName, maximumFileLength)],
-      [2, `MODE:${meta.mode}`],
-      [3, `VIEW:${viewportName} / ORTHOGRAPHIC 2D`],
-      [4, `FIELD:${formatSettingName(settings.shape)} / ${formatSettingName(settings.palette)}`],
-      [5, `POINTS:${meta.points.toLocaleString()} / BASE:${Number(settings.pointCount).toLocaleString()}`],
-      [6, `ANGLE:${Number(settings.goldenAngle).toFixed(2)} DEG / SPACING:${Number(settings.spacing).toFixed(2)}`],
-      [7, `WARP:${Number(settings.warp).toFixed(2)} / SIZE:${Number(settings.pointSize).toFixed(1)} / FFT:${meta.fftSize}`],
-      [8, `FPS:${Math.round(meta.fps || 0)} / RMS:${Number(metrics.rms || 0).toFixed(3)}`],
+      "FIBONACCI AUDIO FIELD",
+      truncateFileName(meta.fileName, maximumFileLength),
+      `MODE  ${meta.mode}`,
+      `VIEW  ${viewportName} / ORTHOGRAPHIC 2D`,
+      `FIELD ${formatSettingName(settings.shape)} / ${formatSettingName(settings.palette)}`,
+      `POINTS ${meta.points.toLocaleString()} / BASE ${Number(settings.pointCount).toLocaleString()}`,
+      `ANGLE ${Number(settings.goldenAngle).toFixed(2)}° / SPACING ${Number(settings.spacing).toFixed(2)}`,
+      `WARP ${Number(settings.warp).toFixed(2)} / SIZE ${Number(settings.pointSize).toFixed(1)} / FFT ${meta.fftSize}`,
+      `FPS ${Math.round(meta.fps || 0)} / RMS ${Number(metrics.rms || 0).toFixed(3)}`,
     ];
-    for (const [lineIndex, text] of lines) {
-      ctx.fillText(text, layout.metadataX, layout.metadataY + lineIndex * layout.lineStep);
+
+    for (let index = 0; index < lines.length; index += 1) {
+      ctx.font = index === 0
+        ? `700 ${layout.fontSize * 1.18}px ${HUD_FONT}`
+        : index === 1
+          ? `600 ${layout.fontSize * 0.92}px ${HUD_FONT}`
+          : `500 ${layout.fontSize * 0.82}px ${HUD_MONO}`;
+      ctx.fillStyle = index === 0 ? COLORS.text : index === 1 ? COLORS.accent : COLORS.muted;
+      ctx.fillText(lines[index], layout.metadataX, layout.metadataY + index * layout.lineStep);
     }
 
-    const rectangles = [layout.frequency, layout.waveform, layout.levels];
-    ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,.92)";
-    for (const rectangle of rectangles) ctx.fillRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
-    ctx.restore();
+    this.drawGraphCard(ctx, layout.frequency, "FREQUENCY RESPONSE", radius, baseLineWidth);
+    this.drawGraphCard(ctx, layout.waveform, "WAVEFORM", radius, baseLineWidth);
+    this.drawGraphCard(ctx, layout.levels, "OUTPUT LEVELS", radius, baseLineWidth);
 
-    const drawGraphLabel = (text, rectangle) => {
-      ctx.save();
-      ctx.font = `${layout.fontSize}px ${HUD_FONT}`;
-      ctx.fillStyle = line;
-      ctx.textBaseline = "top";
-      ctx.textAlign = rectangle.isRight ? "right" : "left";
-      ctx.fillText(text, rectangle.isRight ? rectangle.x + rectangle.width : rectangle.x, rectangle.y - layout.fontSize - layout.labelGap);
-      ctx.restore();
-    };
-    drawGraphLabel("FR MAGNITUDE dB V/V", layout.frequency);
-    drawGraphLabel("WAVEFORM", layout.waveform);
-    drawGraphLabel("LEVELS dBFS", layout.levels);
-
-    ctx.strokeStyle = line;
-    for (const rectangle of rectangles) ctx.strokeRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
-
-    const frequencyToX = (frequencyHz) => {
-      const normalized = Math.log10(frequencyHz / 20) / Math.log10(20000 / 20);
-      return layout.frequency.x + normalized * layout.frequency.width;
-    };
-    ctx.save();
-    ctx.lineWidth = Math.max(0.35, baseLineWidth * 0.5);
-    for (let decade = 10; decade <= 10000; decade *= 10) {
-      for (let multiple = 2; multiple <= 9; multiple += 1) {
-        const frequencyHz = decade * multiple;
-        if (frequencyHz <= 20 || frequencyHz >= 20000) continue;
-        const x = frequencyToX(frequencyHz);
-        ctx.strokeStyle = veryFaint;
-        ctx.beginPath();
-        ctx.moveTo(x, layout.frequency.y);
-        ctx.lineTo(x, layout.frequency.y + layout.frequency.height);
-        ctx.stroke();
-      }
-    }
-    for (const frequencyHz of [100, 1000, 10000]) {
-      const x = frequencyToX(frequencyHz);
-      ctx.strokeStyle = faint;
-      ctx.beginPath();
-      ctx.moveTo(x, layout.frequency.y);
-      ctx.lineTo(x, layout.frequency.y + layout.frequency.height);
-      ctx.stroke();
-    }
-    ctx.strokeStyle = faint;
-    for (let index = 1; index < 5; index += 1) {
-      const y = layout.frequency.y + layout.frequency.height * (index / 5);
-      ctx.beginPath();
-      ctx.moveTo(layout.frequency.x, y);
-      ctx.lineTo(layout.frequency.x + layout.frequency.width, y);
-      ctx.stroke();
-    }
-    for (let index = 1; index < 4; index += 1) {
-      const waveformX = layout.waveform.x + (layout.waveform.width * index) / 4;
-      ctx.beginPath();
-      ctx.moveTo(waveformX, layout.waveform.y + 3);
-      ctx.lineTo(waveformX, layout.waveform.y + layout.waveform.height - 3);
-      ctx.stroke();
-      const levelX = layout.levels.x + (layout.levels.width * index) / 4;
-      ctx.beginPath();
-      ctx.moveTo(levelX, layout.levels.y + 3);
-      ctx.lineTo(levelX, layout.levels.y + layout.levels.height - 3);
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    const frequencyData = metrics.frequencyData || [];
-    if (frequencyData.length) {
-      const points = Math.min(128, frequencyData.length);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(layout.frequency.x, layout.frequency.y, layout.frequency.width, layout.frequency.height);
-      ctx.clip();
-      ctx.beginPath();
-      ctx.moveTo(layout.frequency.x, layout.frequency.y + layout.frequency.height);
-      for (let index = 0; index < points; index += 1) {
-        const sourceIndex = Math.floor((index / Math.max(1, points - 1)) * (frequencyData.length - 1));
-        const value = clamp((frequencyData[sourceIndex] || 0) / 255, 0, 1);
-        const x = layout.frequency.x + (index / Math.max(1, points - 1)) * layout.frequency.width;
-        const y = layout.frequency.y + layout.frequency.height - value * layout.frequency.height;
-        ctx.lineTo(x, y);
-      }
-      ctx.lineTo(layout.frequency.x + layout.frequency.width, layout.frequency.y + layout.frequency.height);
-      ctx.closePath();
-      ctx.fillStyle = "rgba(255,255,255,.19)";
-      ctx.fill();
-      ctx.strokeStyle = line;
-      ctx.lineWidth = baseLineWidth;
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    const waveform = metrics.waveformData || [];
-    if (waveform.length) {
-      const points = Math.min(128, waveform.length);
-      const waveformY = layout.waveform.y + 3;
-      const waveformHeight = layout.waveform.height - 6;
-      const middleY = waveformY + waveformHeight * 0.5;
-      ctx.beginPath();
-      for (let index = 0; index < points; index += 1) {
-        const sourceIndex = Math.floor((index / Math.max(1, points - 1)) * (waveform.length - 1));
-        const sample = ((waveform[sourceIndex] || 128) - 128) / 128;
-        const x = layout.waveform.x + (index / Math.max(1, points - 1)) * layout.waveform.width;
-        const y = middleY - sample * waveformHeight * 0.44;
-        if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.strokeStyle = line;
-      ctx.lineWidth = baseLineWidth;
-      ctx.stroke();
-    }
-
-    this.drawLevels(ctx, layout.levels, layout.fontSize, line, metrics);
+    this.drawFrequency(ctx, layout.frequency, metrics, baseLineWidth);
+    this.drawWaveform(ctx, layout.waveform, metrics, baseLineWidth);
+    this.drawLevels(ctx, layout.levels, layout.fontSize, metrics);
     this.drawLogo(ctx, width, height, layout);
+    ctx.restore();
+  }
+
+  drawGraphCard(ctx, rectangle, label, radius, baseLineWidth) {
+    drawPanel(ctx, rectangle, radius * 0.72, COLORS.panelDeep, COLORS.border);
+    ctx.save();
+    ctx.font = `600 ${Math.max(7, rectangle.height * 0.17)}px ${HUD_FONT}`;
+    ctx.fillStyle = COLORS.muted;
+    ctx.textBaseline = "bottom";
+    ctx.textAlign = rectangle.isRight ? "right" : "left";
+    ctx.fillText(label, rectangle.isRight ? rectangle.x + rectangle.width : rectangle.x, rectangle.y - Math.max(5, rectangle.height * 0.10));
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = COLORS.grid;
+    ctx.lineWidth = Math.max(0.35, baseLineWidth * 0.55);
+    for (let index = 1; index < 4; index += 1) {
+      const x = rectangle.x + (rectangle.width * index) / 4;
+      ctx.beginPath();
+      ctx.moveTo(x, rectangle.y + 3);
+      ctx.lineTo(x, rectangle.y + rectangle.height - 3);
+      ctx.stroke();
+    }
+    for (let index = 1; index < 3; index += 1) {
+      const y = rectangle.y + (rectangle.height * index) / 3;
+      ctx.beginPath();
+      ctx.moveTo(rectangle.x + 3, y);
+      ctx.lineTo(rectangle.x + rectangle.width - 3, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  drawFrequency(ctx, rectangle, metrics, baseLineWidth) {
+    const frequencyData = metrics.frequencyData || [];
+    if (!frequencyData.length) return;
+    const points = Math.min(128, frequencyData.length);
+    const inner = 3;
+    const drawX = rectangle.x + inner;
+    const drawY = rectangle.y + inner;
+    const drawWidth = rectangle.width - inner * 2;
+    const drawHeight = rectangle.height - inner * 2;
+    const fillGradient = ctx.createLinearGradient(0, drawY, 0, drawY + drawHeight);
+    fillGradient.addColorStop(0, "rgba(96,165,250,.36)");
+    fillGradient.addColorStop(1, "rgba(37,99,235,.035)");
+    const strokeGradient = ctx.createLinearGradient(drawX, 0, drawX + drawWidth, 0);
+    strokeGradient.addColorStop(0, "#93c5fd");
+    strokeGradient.addColorStop(1, "#3b82f6");
+
+    ctx.save();
+    roundedRectPath(ctx, rectangle.x, rectangle.y, rectangle.width, rectangle.height, Math.max(4, rectangle.height * 0.12));
+    ctx.clip();
+    ctx.beginPath();
+    ctx.moveTo(drawX, drawY + drawHeight);
+    for (let index = 0; index < points; index += 1) {
+      const sourceIndex = Math.floor((index / Math.max(1, points - 1)) * (frequencyData.length - 1));
+      const value = clamp((frequencyData[sourceIndex] || 0) / 255, 0, 1);
+      const x = drawX + (index / Math.max(1, points - 1)) * drawWidth;
+      const y = drawY + drawHeight - value * drawHeight;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(drawX + drawWidth, drawY + drawHeight);
+    ctx.closePath();
+    ctx.fillStyle = fillGradient;
+    ctx.fill();
+    ctx.strokeStyle = strokeGradient;
+    ctx.lineWidth = Math.max(1, baseLineWidth * 1.35);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawWaveform(ctx, rectangle, metrics, baseLineWidth) {
+    const waveform = metrics.waveformData || [];
+    if (!waveform.length) return;
+    const points = Math.min(128, waveform.length);
+    const inner = 3;
+    const waveformY = rectangle.y + inner;
+    const waveformHeight = rectangle.height - inner * 2;
+    const middleY = waveformY + waveformHeight * 0.5;
+    const drawWidth = rectangle.width - inner * 2;
+
+    ctx.save();
+    roundedRectPath(ctx, rectangle.x, rectangle.y, rectangle.width, rectangle.height, Math.max(4, rectangle.height * 0.12));
+    ctx.clip();
+    ctx.beginPath();
+    for (let index = 0; index < points; index += 1) {
+      const sourceIndex = Math.floor((index / Math.max(1, points - 1)) * (waveform.length - 1));
+      const sample = ((waveform[sourceIndex] || 128) - 128) / 128;
+      const x = rectangle.x + inner + (index / Math.max(1, points - 1)) * drawWidth;
+      const y = middleY - sample * waveformHeight * 0.43;
+      if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = "#93c5fd";
+    ctx.lineWidth = Math.max(1, baseLineWidth * 1.25);
+    ctx.shadowColor = "rgba(59,130,246,.46)";
+    ctx.shadowBlur = Math.max(3, rectangle.height * 0.10);
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -294,40 +333,51 @@ export class HudRenderer {
     const centerX = width * 0.5;
     const centerY = height * (yPercent / 100);
     ctx.save();
-    ctx.globalAlpha = 0.92;
+    ctx.globalAlpha = 0.86;
+    ctx.shadowColor = "rgba(59,130,246,.22)";
+    ctx.shadowBlur = Math.max(5, drawWidth * 0.08);
     ctx.drawImage(this.logoImage, centerX - drawWidth / 2, centerY - drawHeight / 2, drawWidth, drawHeight);
     ctx.restore();
   }
 
-  drawLevels(ctx, rectangle, graphFontSize, line, metrics) {
-    const innerPad = Math.max(2, rectangle.height * 0.16);
+  drawLevels(ctx, rectangle, graphFontSize, metrics) {
+    const innerPad = Math.max(3, rectangle.height * 0.16);
     const top = rectangle.y + innerPad;
     const usableHeight = rectangle.height - innerPad * 2;
-    const rowGap = Math.max(2, usableHeight * 0.16);
+    const rowGap = Math.max(2, usableHeight * 0.15);
     const rowHeight = (usableHeight - rowGap) / 2;
-    const meterFont = Math.max(5, graphFontSize * 0.82);
-    const leftPad = Math.max(3, rectangle.width * 0.02);
-    const labelWidth = Math.max(14, meterFont * 2.6);
+    const meterFont = Math.max(6, graphFontSize * 0.72);
+    const leftPad = Math.max(4, rectangle.width * 0.025);
+    const labelWidth = Math.max(16, meterFont * 2.75);
     const labelX = rectangle.x + leftPad;
     const meterX = labelX + labelWidth;
     const meterWidth = rectangle.x + rectangle.width - meterX - leftPad;
     const peak = clamp(metrics.peak || 0, 0, 1);
     const rms = clamp(metrics.rms || 0, 0, 1);
+    const meterGradient = ctx.createLinearGradient(meterX, 0, meterX + meterWidth, 0);
+    meterGradient.addColorStop(0, "#2563eb");
+    meterGradient.addColorStop(1, "#93c5fd");
 
     ctx.save();
-    ctx.font = `${meterFont}px ${HUD_FONT}`;
+    ctx.font = `600 ${meterFont}px ${HUD_FONT}`;
     ctx.textBaseline = "middle";
     const drawRow = (rowIndex, label, value, hold) => {
       const rowY = top + rowIndex * (rowHeight + rowGap);
       const middleY = rowY + rowHeight * 0.5;
       ctx.textAlign = "left";
-      ctx.fillStyle = line;
+      ctx.fillStyle = COLORS.muted;
       ctx.fillText(label, labelX, middleY);
-      ctx.fillStyle = "rgba(255,255,255,.82)";
-      ctx.fillRect(meterX, rowY, value * meterWidth, rowHeight);
+      roundedRectPath(ctx, meterX, rowY, meterWidth, rowHeight, Math.max(2, rowHeight * 0.5));
+      ctx.fillStyle = "rgba(255,255,255,.08)";
+      ctx.fill();
+      if (value > 0) {
+        roundedRectPath(ctx, meterX, rowY, Math.max(1, value * meterWidth), rowHeight, Math.max(2, rowHeight * 0.5));
+        ctx.fillStyle = meterGradient;
+        ctx.fill();
+      }
       if (hold != null) {
         const holdX = meterX + clamp(hold, 0, 1) * meterWidth;
-        ctx.fillStyle = line;
+        ctx.fillStyle = "rgba(255,255,255,.92)";
         ctx.fillRect(clamp(holdX - 0.75, meterX, meterX + meterWidth - 1.5), rowY, 1.5, rowHeight);
       }
     };
