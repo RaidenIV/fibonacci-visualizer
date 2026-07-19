@@ -285,14 +285,20 @@ export class UIController extends EventTarget {
     this.elements.exportVideo.classList.add("is-recording");
     this.elements.exportProgress.hidden = false;
     this.elements.exportProgressLabel.textContent = `${detail.format || "VIDEO"} // ${detail.width}×${detail.height} @ ${detail.fps} FPS`;
-    this.elements.exportProgressMeta.textContent = detail.duration > 0 ? `Capturing ${formatTime(detail.duration)} in real time.` : "Capturing until stopped.";
+    this.elements.exportProgressMeta.textContent = detail.duration > 0
+      ? detail.realtime === false
+        ? `Encoding ${formatTime(detail.duration)} frame by frame with encoder backpressure.`
+        : `Capturing ${formatTime(detail.duration)} in real time.`
+      : "Capturing until stopped.";
   }
 
   showExportProgress(detail) {
     const percent = detail.duration > 0 ? Math.round(detail.progress * 100) : 0;
     this.elements.exportProgressValue.textContent = detail.duration > 0 ? `${percent}%` : formatTime(detail.elapsed);
     this.elements.exportProgressBar.value = percent;
-    this.elements.exportProgressMeta.textContent = detail.duration > 0 ? `${formatTime(detail.elapsed)} elapsed // ${formatTime(Math.max(0, detail.duration - detail.elapsed))} remaining` : `${formatTime(detail.elapsed)} captured`;
+    this.elements.exportProgressMeta.textContent = detail.message || (detail.duration > 0
+      ? `${formatTime(detail.elapsed)} encoded // ${formatTime(Math.max(0, detail.duration - detail.elapsed))} remaining`
+      : `${formatTime(detail.elapsed)} captured`);
   }
 
   showExportFinish(detail) {

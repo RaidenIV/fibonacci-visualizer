@@ -28,6 +28,10 @@ export class Exporter extends EventTarget {
     this.mkv = null;
     this.latestMetrics = null;
     this.latestMeta = null;
+    this.visualizerSnapshot = null;
+    this.offlineMkvBusy = false;
+    this.mkvFileHandle = null;
+    this.mkvFileName = "";
   }
 
   getResolution() {
@@ -102,28 +106,66 @@ export class Exporter extends EventTarget {
       this.stop(false);
       return;
     }
+
     this.cancelled = false;
     this.finalizing = false;
+    this.offlineMkvBusy = false;
+    this.mkvFileHandle = null;
     this.exportMode = this.state.get("exportFormat") === "mkv" ? "mkv" : "mp4";
     const { start, end, duration } = this.getRange();
     this.rangeStart = start;
     this.rangeEnd = end;
     const audio = this.audioEngine.audio;
-    this.playbackSnapshot = { currentTime: audio.currentTime, paused: audio.paused, loop: audio.loop };
+    this.playbackSnapshot = {
+      currentTime: audio.currentTime,
+      paused: audio.paused,
+      loop: audio.loop,
+      metrics: this.audioEngine.metrics,
+    };
+    this.captureVisualizerSnapshot();
+
     const { width, height } = this.getResolution();
     const fps = Number(this.state.get("exportFps")) || 60;
+    const bitrate = Number(this.state.get("exportBitrate")) * 1_000_000;
+    this.mkvFileName = `${sanitizeFileName(this.state.get("exportFileName"))}-${dateStamp()}.mkv`;
+
+    if (this.exportMode === "mkv" && duration > 0 && "showSaveFilePicker" in window) {
+      const estimatedBytes = duration * (bitrate + 192_000) / 8;
+      if (estimatedBytes >= 96 * 1024 * 1024) {
+        try {
+          this.mkvFileHandle = await window.showSaveFilePicker({
+            suggestedName: this.mkvFileName,
+            types: [{ description: "Matroska video", accept: { "video/x-matroska": [".mkv"] } }],
+          });
+        } catch (error) {
+          if (error?.name === "AbortError") throw error;
+          console.warn("Direct-to-disk MKV output is unavailable; falling back to memory output.", error);
+          this.mkvFileHandle = null;
+        }
+      }
+    }
+
     this.prepareRenderTarget(width, height);
 
     try {
-      if (this.exportMode === "mkv") await this.startMkv(width, height, fps, duration);
-      else await this.startMp4(width, height, fps, duration);
+      if (this.exportMode === "mkv") {
+        await this.startMkv(width, height, fps, duration);
+        if (this.audioEngine.file && duration > 0) {
+          audio.pause();
+          audio.loop = false;
+          this.offlineMkvBusy = true;
+          this.audioEngine.resetOfflineAnalysis();
+        }
+        this.mkv.capturePromise = this.captureMkvFrames();
+        return;
+      }
 
+      await this.startMp4(width, height, fps, duration);
       if (this.audioEngine.file) {
         audio.loop = false;
         audio.currentTime = this.rangeStart;
         await this.audioEngine.play();
       }
-      if (this.exportMode === "mkv" && this.mkv) this.mkv.capturePromise = this.captureMkvFrames();
     } catch (error) {
       this.cancelled = true;
       this.active = false;
@@ -131,16 +173,13 @@ export class Exporter extends EventTarget {
         try {
           this.mkv.videoSource.close();
           this.mkv.audioSource?.close();
-          await this.mkv.output.cancel();
+          if (["pending", "started"].includes(this.mkv.output.state)) await this.mkv.output.cancel();
         } catch { /* The encoder may not have fully initialized. */ }
-        await this.restorePlayback();
-        this.cleanup();
       } else if (this.recorder?.state && this.recorder.state !== "inactive") {
         this.recorder.stop();
-      } else {
-        await this.restorePlayback();
-        this.cleanup();
       }
+      await this.restorePlayback();
+      this.cleanup();
       throw error;
     }
   }
@@ -178,6 +217,75 @@ export class Exporter extends EventTarget {
     return this.mediabunnyModule;
   }
 
+  isOfflineMkvExporting() {
+    return this.offlineMkvBusy;
+  }
+
+  nextEventLoopTurn() {
+    return new Promise((resolve) => window.setTimeout(resolve, 0));
+  }
+
+  withTimeout(promise, timeoutMs, message) {
+    let timeoutId = 0;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
+  }
+
+  captureVisualizerSnapshot() {
+    const visualizer = this.visualizer;
+    this.visualizerSnapshot = {
+      rotation: visualizer.rotation,
+      currentPointCount: visualizer.currentPointCount,
+      audioMultiplier: visualizer.audioMultiplier,
+      bandLevels: { ...visualizer.bandLevels },
+      uniformTime: visualizer.uniforms.uTime.value,
+      uniformRotation: visualizer.uniforms.uRotation.value,
+      uniformCount: visualizer.uniforms.uCount.value,
+      uniformAudioMultiplier: visualizer.uniforms.uAudioMultiplier.value,
+      uniformBass: visualizer.uniforms.uBass.value,
+      uniformMid: visualizer.uniforms.uMid.value,
+      uniformTreble: visualizer.uniforms.uTreble.value,
+    };
+  }
+
+  restoreVisualizerSnapshot() {
+    const snapshot = this.visualizerSnapshot;
+    if (!snapshot) return;
+    const visualizer = this.visualizer;
+    visualizer.rotation = snapshot.rotation;
+    visualizer.currentPointCount = snapshot.currentPointCount;
+    visualizer.audioMultiplier = snapshot.audioMultiplier;
+    visualizer.bandLevels = { ...snapshot.bandLevels };
+    visualizer.uniforms.uTime.value = snapshot.uniformTime;
+    visualizer.uniforms.uRotation.value = snapshot.uniformRotation;
+    visualizer.uniforms.uCount.value = snapshot.uniformCount;
+    visualizer.uniforms.uAudioMultiplier.value = snapshot.uniformAudioMultiplier;
+    visualizer.uniforms.uBass.value = snapshot.uniformBass;
+    visualizer.uniforms.uMid.value = snapshot.uniformMid;
+    visualizer.uniforms.uTreble.value = snapshot.uniformTreble;
+    visualizer.field.geometry.setDrawRange(0, Math.max(1, snapshot.currentPointCount - 1));
+    this.visualizerSnapshot = null;
+  }
+
+  createExportMeta(metrics, currentTime, fps) {
+    const stats = this.visualizer.getStats();
+    return {
+      ...(this.latestMeta || {}),
+      fps,
+      points: stats.points,
+      drawCalls: stats.drawCalls,
+      pixelRatio: stats.pixelRatio,
+      mode: "EXPORT",
+      fileName: this.audioEngine.file?.name || "NO AUDIO FILE",
+      fftSize: this.audioEngine.analyser?.fftSize || 2048,
+      currentTime,
+      duration: this.audioEngine.getDuration(),
+      metrics,
+    };
+  }
+
   async startMkv(width, height, fps, duration) {
     if (!window.VideoEncoder || !window.VideoFrame) {
       throw new Error("MKV export requires WebCodecs support in a current Chromium or Firefox browser.");
@@ -186,18 +294,35 @@ export class Exporter extends EventTarget {
       Output,
       MkvOutputFormat,
       BufferTarget,
+      StreamTarget,
       CanvasSource,
       AudioBufferSource,
       getFirstEncodableVideoCodec,
       getFirstEncodableAudioCodec,
     } = await this.loadMediabunnyModule();
+
     const bitrate = Number(this.state.get("exportBitrate")) * 1_000_000;
-    const selectedVideoCodec = await getFirstEncodableVideoCodec(["avc", "vp9", "vp8", "av1"], { width, height, bitrate });
-    if (!selectedVideoCodec) throw new Error("No supported MKV video codec was found for this resolution.");
+    const highLoadExport = width * height >= 3840 * 2160 && fps >= 50;
+    const codecPreferences = highLoadExport
+      ? ["vp9", "avc", "av1", "vp8"]
+      : ["avc", "vp9", "vp8", "av1"];
+    const selectedVideoCodec = await getFirstEncodableVideoCodec(codecPreferences, { width, height, bitrate });
+    if (!selectedVideoCodec) throw new Error("No supported MKV video codec was found for this resolution and frame rate.");
+
     const selectedAudioCodec = this.audioEngine.decodedBuffer
       ? await getFirstEncodableAudioCodec(["opus", "aac"], { numberOfChannels: 2, sampleRate: 48000, bitrate: 192000 })
       : null;
-    const target = new BufferTarget();
+
+    let target;
+    let streamedToDisk = false;
+    if (this.mkvFileHandle) {
+      const writable = await this.mkvFileHandle.createWritable();
+      target = new StreamTarget(writable, { chunked: true, chunkSize: 8 * 1024 * 1024 });
+      streamedToDisk = true;
+    } else {
+      target = new BufferTarget();
+    }
+
     const output = new Output({ format: new MkvOutputFormat(), target });
     const videoSource = new CanvasSource(this.compositeCanvas, {
       codec: selectedVideoCodec,
@@ -206,10 +331,12 @@ export class Exporter extends EventTarget {
       latencyMode: "quality",
       keyFrameInterval: 2,
       hardwareAcceleration: "no-preference",
+      contentHint: "detail",
     });
     const audioSource = selectedAudioCodec
       ? new AudioBufferSource({ codec: selectedAudioCodec, bitrate: 192000, transform: { numberOfChannels: 2, sampleRate: 48000 } })
       : null;
+
     output.addVideoTrack(videoSource, { frameRate: fps });
     if (audioSource) output.addAudioTrack(audioSource);
     await output.start();
@@ -224,41 +351,160 @@ export class Exporter extends EventTarget {
       fps,
       frameIndex: 0,
       totalFrames: duration > 0 ? Math.max(1, Math.ceil(duration * fps)) : 0,
+      streamedToDisk,
+      audioEncodingPromise: Promise.resolve(),
+      audioEncodingError: null,
+      audioEncodedUntil: 0,
+      audioClosed: !audioSource,
+      videoClosed: false,
     };
     this.extension = "mkv";
     this.active = true;
     this.startedAt = performance.now();
-    this.dispatchEvent(new CustomEvent("start", { detail: { width, height, fps, duration, format: "MKV" } }));
+    this.dispatchEvent(new CustomEvent("start", {
+      detail: { width, height, fps, duration, format: "MKV", realtime: !(duration > 0), codec: selectedVideoCodec },
+    }));
   }
 
   async captureMkvFrames() {
+    if (!this.mkv) return;
+    if (this.mkv.totalFrames > 0 && this.audioEngine.decodedBuffer) {
+      return this.captureOfflineMkvFrames();
+    }
+    return this.captureRealtimeMkvFrames();
+  }
+
+  async addMkvFrame(frameIndex, totalFrames, timestamp, duration) {
+    const mkv = this.mkv;
+    if (!mkv) return;
+    const progress = totalFrames > 0 ? Math.min(0.9, ((frameIndex + 1) / totalFrames) * 0.9) : 0;
+    let heartbeatCount = 0;
+    const heartbeat = window.setInterval(() => {
+      heartbeatCount += 1;
+      this.dispatchEvent(new CustomEvent("progress", {
+        detail: {
+          progress,
+          elapsed: frameIndex / mkv.fps,
+          duration: totalFrames > 0 ? totalFrames / mkv.fps : 0,
+          currentTime: this.rangeStart + frameIndex / mkv.fps,
+          message: `Encoder working on frame ${frameIndex + 1}${totalFrames > 0 ? ` of ${totalFrames}` : ""}${heartbeatCount > 1 ? ` · ${heartbeatCount * 3}s` : ""}`,
+        },
+      }));
+    }, 3000);
+
+    try {
+      await this.withTimeout(
+        mkv.videoSource.add(timestamp, duration, {
+          keyFrame: frameIndex % Math.max(1, mkv.fps * 2) === 0,
+        }),
+        90_000,
+        `The ${mkv.selectedVideoCodec.toUpperCase()} encoder stopped responding while processing frame ${frameIndex + 1}. Retry with a lower frame rate or resolution.`,
+      );
+    } finally {
+      window.clearInterval(heartbeat);
+    }
+  }
+
+  async queueMkvAudioThrough(capturedDuration) {
+    const mkv = this.mkv;
+    if (!mkv?.audioSource || mkv.audioClosed || !this.audioEngine.decodedBuffer) return;
+    const maximumDuration = Number.isFinite(this.rangeEnd)
+      ? Math.max(0, this.rangeEnd - this.rangeStart)
+      : Math.max(0, capturedDuration);
+    const targetDuration = Math.min(maximumDuration, Math.max(0, capturedDuration));
+    const chunkDuration = 5;
+
+    while (mkv.audioEncodedUntil + 1e-4 < targetDuration) {
+      const segmentStart = mkv.audioEncodedUntil;
+      const segmentEnd = Math.min(targetDuration, segmentStart + chunkDuration);
+      const segment = this.createAudioSegment(this.rangeStart + segmentStart, this.rangeStart + segmentEnd);
+      mkv.audioEncodedUntil = segmentEnd;
+      if (!segment) continue;
+      mkv.audioEncodingPromise = mkv.audioEncodingPromise
+        .then(() => mkv.audioSource.add(segment))
+        .catch((error) => {
+          mkv.audioEncodingError = error;
+        });
+      await this.withTimeout(
+        mkv.audioEncodingPromise,
+        120_000,
+        `MKV audio encoding stopped responding near ${segmentEnd.toFixed(1)} seconds.`,
+      );
+      if (mkv.audioEncodingError) throw mkv.audioEncodingError;
+    }
+  }
+
+  async captureOfflineMkvFrames() {
+    const mkv = this.mkv;
+    if (!mkv) return;
+    const frameDuration = 1 / mkv.fps;
+    const totalFrames = mkv.totalFrames;
+
+    try {
+      for (let frameIndex = 0; frameIndex < totalFrames && this.active && this.mkv === mkv; frameIndex += 1) {
+        const elapsed = frameIndex * frameDuration;
+        const audioTime = Math.min(this.rangeEnd, this.rangeStart + elapsed);
+        const metrics = this.audioEngine.sampleMetricsAt(audioTime, frameDuration);
+        this.visualizer.update(frameDuration, elapsed, metrics);
+        const meta = this.createExportMeta(metrics, audioTime, mkv.fps);
+        this.latestMetrics = metrics;
+        this.latestMeta = meta;
+        if (!this.renderComposite(metrics, meta)) throw new Error("The export frame could not be rendered.");
+
+        await this.nextEventLoopTurn();
+        if (!this.active || this.cancelled) break;
+        await this.addMkvFrame(frameIndex, totalFrames, frameIndex / mkv.fps, frameDuration);
+        mkv.frameIndex = frameIndex + 1;
+
+        const encodedDuration = mkv.frameIndex / mkv.fps;
+        const audioChunkInterval = Math.max(1, Math.round(mkv.fps * 5));
+        if (mkv.audioSource && (mkv.frameIndex % audioChunkInterval === 0 || mkv.frameIndex >= totalFrames)) {
+          await this.queueMkvAudioThrough(encodedDuration);
+        }
+        const progress = Math.min(0.9, (mkv.frameIndex / totalFrames) * 0.9);
+        this.dispatchEvent(new CustomEvent("progress", {
+          detail: {
+            progress,
+            elapsed: encodedDuration,
+            duration: totalFrames / mkv.fps,
+            currentTime: audioTime,
+            message: `Encoded frame ${mkv.frameIndex} of ${totalFrames} · ${mkv.selectedVideoCodec.toUpperCase()}`,
+          },
+        }));
+        await this.nextEventLoopTurn();
+      }
+
+      if (!this.cancelled && mkv.frameIndex >= totalFrames) {
+        this.active = false;
+        window.setTimeout(() => { void this.finalizeMkv(); }, 0);
+      }
+    } catch (error) {
+      this.cancelled = true;
+      this.active = false;
+      this.dispatchEvent(new CustomEvent("error", { detail: { message: error.message || "MKV export failed." } }));
+      window.setTimeout(() => { void this.finalizeMkv(); }, 0);
+    }
+  }
+
+  async captureRealtimeMkvFrames() {
     try {
       while (this.active && this.mkv) {
         await new Promise((resolve) => requestAnimationFrame(resolve));
         if (!this.active || !this.mkv) break;
-        const audio = this.audioEngine.audio;
-        const elapsed = this.audioEngine.file
-          ? Math.max(0, audio.currentTime - this.rangeStart)
-          : (performance.now() - this.startedAt) / 1000;
+        const elapsed = (performance.now() - this.startedAt) / 1000;
         const targetFrame = Math.floor(elapsed * this.mkv.fps);
         if (this.mkv.frameIndex > targetFrame) continue;
-        const catchUpCount = Math.min(4, targetFrame - this.mkv.frameIndex + 1);
-        for (let index = 0; index < catchUpCount && this.active; index += 1) {
-          if (!this.renderComposite()) continue;
-          const frameIndex = this.mkv.frameIndex;
-          await this.mkv.videoSource.add(frameIndex / this.mkv.fps, 1 / this.mkv.fps, {
-            keyFrame: frameIndex % Math.max(1, this.mkv.fps * 2) === 0,
-          });
-          this.mkv.frameIndex += 1;
-        }
-        const exportDuration = Number.isFinite(this.rangeEnd) ? this.rangeEnd - this.rangeStart : 0;
-        const progress = exportDuration > 0 ? Math.min(1, elapsed / exportDuration) : 0;
-        this.dispatchEvent(new CustomEvent("progress", { detail: { progress, elapsed, duration: exportDuration, currentTime: audio.currentTime } }));
-        if (Number.isFinite(this.rangeEnd) && audio.currentTime >= this.rangeEnd - 0.035) this.stop(false);
+        if (!this.renderComposite()) continue;
+        const frameIndex = this.mkv.frameIndex;
+        await this.addMkvFrame(frameIndex, 0, frameIndex / this.mkv.fps, 1 / this.mkv.fps);
+        this.mkv.frameIndex += 1;
+        this.dispatchEvent(new CustomEvent("progress", { detail: { progress: 0, elapsed, duration: 0, currentTime: elapsed } }));
       }
     } catch (error) {
+      this.cancelled = true;
+      this.active = false;
       this.dispatchEvent(new CustomEvent("error", { detail: { message: error.message || "MKV export failed." } }));
-      this.stop(true);
+      window.setTimeout(() => { void this.finalizeMkv(); }, 0);
     }
   }
 
@@ -309,27 +555,49 @@ export class Exporter extends EventTarget {
     try {
       await mkv.capturePromise;
       if (this.cancelled) {
-        mkv.videoSource.close();
-        mkv.audioSource?.close();
-        await mkv.output.cancel();
-      } else {
-        mkv.videoSource.close();
-        if (mkv.audioSource && this.audioEngine.decodedBuffer) {
-          const capturedDuration = Math.max(1 / mkv.fps, mkv.frameIndex / mkv.fps);
-          const audioEnd = Math.min(this.rangeEnd, this.rangeStart + capturedDuration);
-          const segment = this.createAudioSegment(this.rangeStart, audioEnd);
-          if (segment) await mkv.audioSource.add(segment);
-          mkv.audioSource.close();
+        try { if (!mkv.videoClosed) mkv.videoSource.close(); } catch { /* Encoder already stopped. */ }
+        try { mkv.audioSource?.close(); } catch { /* Audio source already stopped. */ }
+        if (["pending", "started"].includes(mkv.output.state)) {
+          await this.withTimeout(mkv.output.cancel(), 30_000, "MKV cancellation timed out.");
         }
-        await mkv.output.finalize();
-        if (!mkv.target.buffer) throw new Error("MKV finalization returned no data.");
-        const blob = new Blob([mkv.target.buffer], { type: "video/x-matroska" });
-        downloadBlob(blob, `${sanitizeFileName(this.state.get("exportFileName"))}-${dateStamp()}.mkv`);
+      } else {
+        if (!mkv.videoClosed) {
+          mkv.videoSource.close();
+          mkv.videoClosed = true;
+        }
+        this.dispatchEvent(new CustomEvent("progress", {
+          detail: { progress: 0.92, elapsed: mkv.frameIndex / mkv.fps, duration: mkv.totalFrames / mkv.fps, message: "Encoding synchronized audio…" },
+        }));
+        await this.queueMkvAudioThrough(mkv.frameIndex / mkv.fps);
+        await this.withTimeout(mkv.audioEncodingPromise, 180_000, "MKV audio encoding timed out.");
+        if (mkv.audioEncodingError) throw mkv.audioEncodingError;
+        if (mkv.audioSource && !mkv.audioClosed) {
+          mkv.audioSource.close();
+          mkv.audioClosed = true;
+        }
+
+        this.dispatchEvent(new CustomEvent("progress", {
+          detail: { progress: 0.98, elapsed: mkv.frameIndex / mkv.fps, duration: mkv.totalFrames / mkv.fps, message: "Finalizing MKV container…" },
+        }));
+        await this.withTimeout(mkv.output.finalize(), 180_000, "MKV finalization timed out.");
+
+        if (!mkv.streamedToDisk) {
+          if (!mkv.target.buffer) throw new Error("MKV finalization returned no data.");
+          const blob = new Blob([mkv.target.buffer], { type: "video/x-matroska" });
+          downloadBlob(blob, this.mkvFileName || `${sanitizeFileName(this.state.get("exportFileName"))}-${dateStamp()}.mkv`);
+        }
+        this.dispatchEvent(new CustomEvent("progress", {
+          detail: { progress: 1, elapsed: mkv.frameIndex / mkv.fps, duration: mkv.totalFrames / mkv.fps, message: mkv.streamedToDisk ? "MKV saved directly to disk." : "MKV export complete." },
+        }));
       }
+
       await this.restorePlayback();
       this.cleanup();
       this.dispatchEvent(new CustomEvent("finish", { detail: { cancelled: this.cancelled } }));
     } catch (error) {
+      try {
+        if (["pending", "started"].includes(mkv.output.state)) await mkv.output.cancel();
+      } catch { /* Preserve the original export error. */ }
       await this.restorePlayback();
       this.cleanup();
       this.dispatchEvent(new CustomEvent("error", { detail: { message: error.message || "MKV export failed." } }));
@@ -357,7 +625,10 @@ export class Exporter extends EventTarget {
 
   async restorePlayback() {
     const audio = this.audioEngine.audio;
+    this.restoreVisualizerSnapshot();
     if (!this.playbackSnapshot) return;
+    this.audioEngine.resetOfflineAnalysis();
+    this.audioEngine.metrics = this.playbackSnapshot.metrics || this.audioEngine.createEmptyMetrics();
     audio.pause();
     audio.loop = this.playbackSnapshot.loop;
     if (Number.isFinite(audio.duration)) audio.currentTime = Math.min(this.playbackSnapshot.currentTime, audio.duration);
@@ -378,6 +649,10 @@ export class Exporter extends EventTarget {
     this.chunks = [];
     this.mkv = null;
     this.playbackSnapshot = null;
+    this.visualizerSnapshot = null;
+    this.offlineMkvBusy = false;
+    this.mkvFileHandle = null;
+    this.mkvFileName = "";
   }
 
   exportPng(metrics, meta) {

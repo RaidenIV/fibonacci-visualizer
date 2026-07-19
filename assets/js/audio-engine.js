@@ -24,7 +24,18 @@ export class AudioEngine extends EventTarget {
     this.loopStart = 0;
     this.loopEnd = 0;
     this.loopEnabled = false;
+    this.loopBpm = 120;
+    this.loopBars = 4;
     this.previewLoop = null;
+    this.offlineFftSize = 2048;
+    this.offlineFftReal = new Float64Array(this.offlineFftSize);
+    this.offlineFftImag = new Float64Array(this.offlineFftSize);
+    this.offlineWindow = new Float64Array(this.offlineFftSize);
+    for (let index = 0; index < this.offlineFftSize; index += 1) {
+      this.offlineWindow[index] = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (this.offlineFftSize - 1));
+    }
+    this.offlineAverageEnergy = 0.08;
+    this.offlineLastBeatAt = -Infinity;
     this.loopWrapPending = false;
     this.bindAudioEvents();
   }
@@ -82,6 +93,9 @@ export class AudioEngine extends EventTarget {
     this.loopEnabled = false;
     this.loopStart = 0;
     this.loopEnd = 0;
+    this.loopBpm = 120;
+    this.loopBars = 4;
+    this.resetOfflineAnalysis();
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = URL.createObjectURL(file);
     this.audio.pause();
@@ -386,6 +400,139 @@ export class AudioEngine extends EventTarget {
       frequencyData: this.frequencyData,
       waveformData: this.waveformData,
     };
+  }
+
+
+  resetOfflineAnalysis() {
+    this.offlineAverageEnergy = 0.08;
+    this.offlineLastBeatAt = -Infinity;
+    this.frequencyData.fill(0);
+    this.waveformData.fill(128);
+    this.metrics = this.createEmptyMetrics();
+  }
+
+  fftInPlace(real, imag) {
+    const length = real.length;
+    for (let index = 1, reversed = 0; index < length; index += 1) {
+      let bit = length >> 1;
+      for (; reversed & bit; bit >>= 1) reversed ^= bit;
+      reversed ^= bit;
+      if (index < reversed) {
+        const realValue = real[index];
+        real[index] = real[reversed];
+        real[reversed] = realValue;
+        const imaginaryValue = imag[index];
+        imag[index] = imag[reversed];
+        imag[reversed] = imaginaryValue;
+      }
+    }
+
+    for (let size = 2; size <= length; size <<= 1) {
+      const angle = (-2 * Math.PI) / size;
+      const phaseReal = Math.cos(angle);
+      const phaseImaginary = Math.sin(angle);
+      for (let start = 0; start < length; start += size) {
+        let currentReal = 1;
+        let currentImaginary = 0;
+        const half = size >> 1;
+        for (let offset = 0; offset < half; offset += 1) {
+          const evenIndex = start + offset;
+          const oddIndex = evenIndex + half;
+          const oddReal = real[oddIndex] * currentReal - imag[oddIndex] * currentImaginary;
+          const oddImaginary = real[oddIndex] * currentImaginary + imag[oddIndex] * currentReal;
+          const evenReal = real[evenIndex];
+          const evenImaginary = imag[evenIndex];
+          real[evenIndex] = evenReal + oddReal;
+          imag[evenIndex] = evenImaginary + oddImaginary;
+          real[oddIndex] = evenReal - oddReal;
+          imag[oddIndex] = evenImaginary - oddImaginary;
+          const nextReal = currentReal * phaseReal - currentImaginary * phaseImaginary;
+          currentImaginary = currentReal * phaseImaginary + currentImaginary * phaseReal;
+          currentReal = nextReal;
+        }
+      }
+    }
+  }
+
+  sampleMetricsAt(timeSeconds, delta = 1 / 60) {
+    const buffer = this.decodedBuffer;
+    if (!buffer || buffer.length <= 0) return this.createEmptyMetrics();
+
+    const fftSize = this.offlineFftSize;
+    const sampleRate = buffer.sampleRate;
+    const centerSample = Math.floor(clamp(Number(timeSeconds) || 0, 0, buffer.duration) * sampleRate);
+    const startSample = centerSample - (fftSize >> 1);
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index));
+    const sensitivity = Number(this.state.get("sensitivity")) || 1;
+    let squareSum = 0;
+    let peak = 0;
+
+    for (let index = 0; index < fftSize; index += 1) {
+      const sourceIndex = startSample + index;
+      let mixed = 0;
+      if (sourceIndex >= 0 && sourceIndex < buffer.length) {
+        for (const channel of channels) mixed += (channel[sourceIndex] || 0) / channels.length;
+      }
+      squareSum += mixed * mixed;
+      peak = Math.max(peak, Math.abs(mixed));
+      this.waveformData[index] = Math.round(clamp(128 + mixed * 127, 0, 255));
+      this.offlineFftReal[index] = mixed * this.offlineWindow[index];
+      this.offlineFftImag[index] = 0;
+    }
+
+    this.fftInPlace(this.offlineFftReal, this.offlineFftImag);
+    const binCount = Math.min(this.frequencyData.length, fftSize >> 1);
+    const binHz = sampleRate / fftSize;
+    let energy = 0;
+    let weighted = 0;
+    let weightTotal = 0;
+    const bandAccumulator = { bass: 0, mid: 0, treble: 0 };
+    const bandCounts = { bass: 0, mid: 0, treble: 0 };
+
+    for (let index = 0; index < binCount; index += 1) {
+      const magnitude = Math.hypot(this.offlineFftReal[index], this.offlineFftImag[index]) / (fftSize * 0.5);
+      const decibels = 20 * Math.log10(Math.max(1e-10, magnitude));
+      const normalized = clamp((decibels + 95) / 85, 0, 1);
+      const byteValue = Math.round(normalized * 255);
+      this.frequencyData[index] = byteValue;
+      energy += normalized;
+      weighted += index * normalized;
+      weightTotal += normalized;
+      const frequency = index * binHz;
+      if (frequency >= 20 && frequency < 250) {
+        bandAccumulator.bass += normalized;
+        bandCounts.bass += 1;
+      } else if (frequency < 2000) {
+        bandAccumulator.mid += normalized;
+        bandCounts.mid += 1;
+      } else if (frequency < 16000) {
+        bandAccumulator.treble += normalized;
+        bandCounts.treble += 1;
+      }
+    }
+    for (let index = binCount; index < this.frequencyData.length; index += 1) this.frequencyData[index] = 0;
+
+    energy = (energy / Math.max(1, binCount)) * sensitivity;
+    const rms = Math.sqrt(squareSum / fftSize) * sensitivity;
+    this.offlineAverageEnergy = lerp(this.offlineAverageEnergy, energy, 0.025);
+    const beatDetected = energy > this.offlineAverageEnergy * 1.42 && energy > 0.09 && timeSeconds - this.offlineLastBeatAt > 0.17;
+    if (beatDetected) this.offlineLastBeatAt = timeSeconds;
+    const previousBeat = this.metrics.beat || 0;
+    const beat = beatDetected ? 1 : Math.max(0, previousBeat - delta * 4.8);
+
+    this.metrics = {
+      energy: clamp(energy, 0, 2.5),
+      rms: clamp(rms, 0, 2.5),
+      peak: clamp(peak * sensitivity, 0, 2.5),
+      bass: clamp((bandAccumulator.bass / Math.max(1, bandCounts.bass)) * sensitivity, 0, 2.5),
+      mid: clamp((bandAccumulator.mid / Math.max(1, bandCounts.mid)) * sensitivity, 0, 2.5),
+      treble: clamp((bandAccumulator.treble / Math.max(1, bandCounts.treble)) * sensitivity, 0, 2.5),
+      centroid: weightTotal ? weighted / weightTotal / Math.max(1, binCount) : 0,
+      beat,
+      frequencyData: this.frequencyData,
+      waveformData: this.waveformData,
+    };
+    return this.metrics;
   }
 
   destroy() {

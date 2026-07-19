@@ -79,6 +79,10 @@ class FibonacciAudioFieldApp {
 
   animate(now) {
     requestAnimationFrame(this.animate);
+    if (this.exporter.isOfflineMkvExporting()) {
+      this.lastFrameAt = now;
+      return;
+    }
     const delta = Math.min(0.05, Math.max(0.001, (now - this.lastFrameAt) / 1000));
     const elapsed = (now - this.startedAt) / 1000;
     this.lastFrameAt = now;
