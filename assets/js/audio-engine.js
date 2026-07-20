@@ -1,5 +1,162 @@
 import { clamp, lerp } from "./utils.js";
 
+const FREQUENCY_GRAPH_MIN_HZ = 20;
+const FREQUENCY_GRAPH_MAX_HZ = 20000;
+const FREQUENCY_GRAPH_POINT_COUNT = 128;
+const FREQUENCY_GRAPH_DB_MIN = -25;
+const FREQUENCY_GRAPH_DB_MAX = 0;
+const FREQUENCY_GRAPH_ANALYSIS_FPS = 45;
+const FREQUENCY_GRAPH_MAX_FRAMES = 3600;
+const FREQUENCY_GRAPH_SILENCE_RANGE_DB = 80;
+const FREQUENCY_GRAPH_ATTACK_MS = 45;
+const FREQUENCY_GRAPH_RELEASE_MS = 180;
+const FREQUENCY_GRAPH_MIN_FRAME_COUNT = 35 * 8;
+
+function frequencyCatmullRom(p0, p1, p2, p3, amount) {
+  const t2 = amount * amount;
+  const t3 = t2 * amount;
+  return 0.5 * (
+    (2 * p1) +
+    (-p0 + p2) * amount +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+  );
+}
+
+function createFrequencyFftWorkspace(size) {
+  const levels = Math.log2(size);
+  if (!Number.isInteger(levels)) throw new Error("FFT size must be a power of two.");
+  const real = new Float32Array(size);
+  const imaginary = new Float32Array(size);
+  const bitReversedIndices = new Uint32Array(size);
+  const windowValues = new Float64Array(size);
+  for (let index = 0; index < size; index += 1) {
+    let value = index;
+    let reversed = 0;
+    for (let bit = 0; bit < levels; bit += 1) {
+      reversed = (reversed << 1) | (value & 1);
+      value >>= 1;
+    }
+    bitReversedIndices[index] = reversed;
+    windowValues[index] = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (size - 1));
+  }
+  const stages = [];
+  for (let blockSize = 2; blockSize <= size; blockSize *= 2) {
+    const halfBlock = blockSize / 2;
+    const phaseStep = (-2 * Math.PI) / blockSize;
+    const cosine = new Float64Array(halfBlock);
+    const sine = new Float64Array(halfBlock);
+    for (let offset = 0; offset < halfBlock; offset += 1) {
+      const angle = phaseStep * offset;
+      cosine[offset] = Math.cos(angle);
+      sine[offset] = Math.sin(angle);
+    }
+    stages.push({ blockSize, halfBlock, cosine, sine });
+  }
+  return { size, real, imaginary, bitReversedIndices, windowValues, stages };
+}
+
+function fillFrequencyFftInput(workspace, channels, frameStart) {
+  const { size, real, imaginary, bitReversedIndices, windowValues } = workspace;
+  const channelScale = 1 / Math.max(1, channels.length);
+  const sampleCount = channels[0]?.length || 0;
+  for (let sampleOffset = 0; sampleOffset < size; sampleOffset += 1) {
+    const sourceIndex = frameStart + sampleOffset;
+    let sample = 0;
+    if (sourceIndex >= 0 && sourceIndex < sampleCount) {
+      for (const channel of channels) sample += channel[sourceIndex] * channelScale;
+    }
+    const destinationIndex = bitReversedIndices[sampleOffset];
+    real[destinationIndex] = sample * windowValues[sampleOffset];
+    imaginary[destinationIndex] = 0;
+  }
+}
+
+function runFrequencyFft(workspace) {
+  const { size, real, imaginary, stages } = workspace;
+  for (const stage of stages) {
+    const { blockSize, halfBlock, cosine, sine } = stage;
+    for (let blockStart = 0; blockStart < size; blockStart += blockSize) {
+      for (let offset = 0; offset < halfBlock; offset += 1) {
+        const evenIndex = blockStart + offset;
+        const oddIndex = evenIndex + halfBlock;
+        const oddReal = real[oddIndex] * cosine[offset] - imaginary[oddIndex] * sine[offset];
+        const oddImaginary = real[oddIndex] * sine[offset] + imaginary[oddIndex] * cosine[offset];
+        const evenReal = real[evenIndex];
+        const evenImaginary = imaginary[evenIndex];
+        real[oddIndex] = evenReal - oddReal;
+        imaginary[oddIndex] = evenImaginary - oddImaginary;
+        real[evenIndex] = evenReal + oddReal;
+        imaginary[evenIndex] = evenImaginary + oddImaginary;
+      }
+    }
+  }
+}
+
+function logarithmicFrequencyAtPosition(amount, maximumFrequencyHz) {
+  const maximum = Math.max(FREQUENCY_GRAPH_MIN_HZ, maximumFrequencyHz);
+  return FREQUENCY_GRAPH_MIN_HZ * Math.pow(maximum / FREQUENCY_GRAPH_MIN_HZ, clamp(amount, 0, 1));
+}
+
+function createFrequencyBinPositions(pointCount, maximumFrequencyHz, sampleRate, fftSize) {
+  const positions = new Float64Array(pointCount);
+  const maximumBin = fftSize / 2;
+  for (let index = 0; index < pointCount; index += 1) {
+    const amount = pointCount <= 1 ? 0 : index / (pointCount - 1);
+    const frequencyHz = logarithmicFrequencyAtPosition(amount, maximumFrequencyHz);
+    positions[index] = clamp((frequencyHz * fftSize) / sampleRate, 0, maximumBin);
+  }
+  return positions;
+}
+
+function sampleFrequencyMagnitude(real, imaginary, binPosition) {
+  const maximumBin = real.length / 2;
+  const lowerBin = Math.floor(clamp(binPosition, 0, maximumBin));
+  const upperBin = Math.min(maximumBin, lowerBin + 1);
+  const amount = binPosition - lowerBin;
+  const lowerMagnitude = Math.hypot(real[lowerBin], imaginary[lowerBin]);
+  if (upperBin === lowerBin) return lowerMagnitude;
+  const upperMagnitude = Math.hypot(real[upperBin], imaginary[upperBin]);
+  return lowerMagnitude + (upperMagnitude - lowerMagnitude) * amount;
+}
+
+function smoothFrequencyRows(data, frameDurationSeconds) {
+  let result = data.map((row) => Float32Array.from(row));
+  result = result.map((row) => {
+    const next = new Float32Array(row.length);
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      let weightedSum = row[columnIndex] * 6;
+      let totalWeight = 6;
+      for (let offset = -2; offset <= 2; offset += 1) {
+        if (offset === 0) continue;
+        const neighbor = clamp(columnIndex + offset, 0, row.length - 1);
+        const weight = 1 / (1 + Math.abs(offset) * 0.65);
+        weightedSum += row[neighbor] * weight;
+        totalWeight += weight;
+      }
+      next[columnIndex] = weightedSum / totalWeight;
+    }
+    return next;
+  });
+  if (result.length <= 1) return result;
+  const safeFrameDuration = Math.max(1 / 240, frameDurationSeconds);
+  const attackAlpha = 1 - Math.exp(-safeFrameDuration / (FREQUENCY_GRAPH_ATTACK_MS / 1000));
+  const releaseAlpha = 1 - Math.exp(-safeFrameDuration / (FREQUENCY_GRAPH_RELEASE_MS / 1000));
+  const smoothed = result.map((row) => new Float32Array(row.length));
+  smoothed[0].set(result[0]);
+  for (let rowIndex = 1; rowIndex < result.length; rowIndex += 1) {
+    const source = result[rowIndex];
+    const previous = smoothed[rowIndex - 1];
+    const destination = smoothed[rowIndex];
+    for (let columnIndex = 0; columnIndex < source.length; columnIndex += 1) {
+      const alpha = source[columnIndex] >= previous[columnIndex] ? attackAlpha : releaseAlpha;
+      destination[columnIndex] = previous[columnIndex] + (source[columnIndex] - previous[columnIndex]) * alpha;
+    }
+  }
+  return smoothed;
+}
+
+
 export class AudioEngine extends EventTarget {
   constructor(audioElement, state) {
     super();
@@ -17,6 +174,10 @@ export class AudioEngine extends EventTarget {
     this.file = null;
     this.decodedBuffer = null;
     this.waveformPeaks = null;
+    this.frequencySpectrogramData = null;
+    this.frequencyGraphBuffer = new Float32Array(FREQUENCY_GRAPH_POINT_COUNT);
+    this.frequencyGraphSmoothed = new Float32Array(FREQUENCY_GRAPH_POINT_COUNT);
+    this.frequencyAnalysisVersion = 0;
     this.averageEnergy = 0.08;
     this.lastBeatAt = 0;
     this.demoPhase = 0;
@@ -41,7 +202,7 @@ export class AudioEngine extends EventTarget {
   }
 
   createEmptyMetrics() {
-    return { energy: 0, rms: 0, peak: 0, bass: 0, mid: 0, treble: 0, centroid: 0, beat: 0, frequencyData: this.frequencyData, waveformData: this.waveformData };
+    return { energy: 0, rms: 0, peak: 0, bass: 0, mid: 0, treble: 0, centroid: 0, beat: 0, frequencyData: this.frequencyData, frequencyGraphData: this.frequencyGraphSmoothed, waveformData: this.waveformData };
   }
 
   bindAudioEvents() {
@@ -89,6 +250,10 @@ export class AudioEngine extends EventTarget {
     this.file = file;
     this.decodedBuffer = null;
     this.waveformPeaks = null;
+    this.frequencySpectrogramData = null;
+    this.frequencyGraphBuffer.fill(0);
+    this.frequencyGraphSmoothed.fill(0);
+    this.frequencyAnalysisVersion += 1;
     this.previewLoop = null;
     this.loopEnabled = false;
     this.loopStart = 0;
@@ -121,6 +286,7 @@ export class AudioEngine extends EventTarget {
       const bytes = await file.arrayBuffer();
       this.decodedBuffer = await this.context.decodeAudioData(bytes.slice(0));
       this.waveformPeaks = this.buildWaveformPeaks(this.decodedBuffer);
+      await this.buildFrequencySpectrogram(this.decodedBuffer);
     } catch (error) {
       this.file = null;
       this.audio.removeAttribute("src");
@@ -280,6 +446,112 @@ export class AudioEngine extends EventTarget {
     }
   }
 
+  async buildFrequencySpectrogram(buffer) {
+    if (!buffer || buffer.length <= 0) {
+      this.frequencySpectrogramData = null;
+      return;
+    }
+    const version = ++this.frequencyAnalysisVersion;
+    const fftSize = 2048;
+    const workspace = createFrequencyFftWorkspace(fftSize);
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index));
+    const maximumFrequency = Math.min(FREQUENCY_GRAPH_MAX_HZ, buffer.sampleRate * 0.5);
+    const binPositions = createFrequencyBinPositions(
+      FREQUENCY_GRAPH_POINT_COUNT,
+      maximumFrequency,
+      buffer.sampleRate,
+      fftSize,
+    );
+    const frameCount = Math.min(
+      FREQUENCY_GRAPH_MAX_FRAMES,
+      Math.max(FREQUENCY_GRAPH_MIN_FRAME_COUNT, Math.round(buffer.duration * FREQUENCY_GRAPH_ANALYSIS_FPS)),
+    );
+    const rawRows = Array.from({ length: frameCount }, () => new Float32Array(FREQUENCY_GRAPH_POINT_COUNT));
+    let globalMaximumDb = -Infinity;
+    const halfWindow = fftSize / 2;
+
+    for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+      if (version !== this.frequencyAnalysisVersion) return;
+      const progress = frameCount <= 1 ? 0 : frameIndex / (frameCount - 1);
+      const centerSample = Math.round(progress * Math.max(0, buffer.length - 1));
+      fillFrequencyFftInput(workspace, channels, centerSample - halfWindow);
+      runFrequencyFft(workspace);
+      const row = rawRows[frameIndex];
+      for (let pointIndex = 0; pointIndex < row.length; pointIndex += 1) {
+        const magnitude = sampleFrequencyMagnitude(workspace.real, workspace.imaginary, binPositions[pointIndex]);
+        const db = 20 * Math.log10(Math.max(1e-12, magnitude));
+        row[pointIndex] = db;
+        if (db > globalMaximumDb) globalMaximumDb = db;
+      }
+      if ((frameIndex + 1) % 16 === 0) await new Promise((resolve) => window.setTimeout(resolve, 0));
+    }
+
+    if (version !== this.frequencyAnalysisVersion) return;
+    const dynamicRange = FREQUENCY_GRAPH_DB_MAX - FREQUENCY_GRAPH_DB_MIN;
+    const silenceThreshold = globalMaximumDb - FREQUENCY_GRAPH_SILENCE_RANGE_DB;
+    const normalizedRows = rawRows.map((row) => {
+      const normalized = new Float32Array(FREQUENCY_GRAPH_POINT_COUNT);
+      let rowPeakDb = -Infinity;
+      for (let index = 0; index < row.length; index += 1) rowPeakDb = Math.max(rowPeakDb, row[index]);
+      if (!Number.isFinite(rowPeakDb) || rowPeakDb <= silenceThreshold) return normalized;
+      const rowFloorDb = rowPeakDb - dynamicRange;
+      for (let index = 0; index < row.length; index += 1) {
+        normalized[index] = clamp((row[index] - rowFloorDb) / dynamicRange, 0, 1);
+      }
+      return normalized;
+    });
+    const frameDuration = buffer.duration / Math.max(1, frameCount - 1);
+    this.frequencySpectrogramData = smoothFrequencyRows(normalizedRows, frameDuration);
+    this.frequencyGraphBuffer.fill(0);
+    this.frequencyGraphSmoothed.fill(0);
+  }
+
+  sampleFrequencyGraphAt(timeSeconds, immediate = false) {
+    const rows = this.frequencySpectrogramData;
+    const destination = this.frequencyGraphBuffer;
+    const smoothed = this.frequencyGraphSmoothed;
+    if (!rows || rows.length === 0 || !this.decodedBuffer) {
+      destination.fill(0);
+      smoothed.fill(0);
+      return smoothed;
+    }
+    const progress = clamp((Number(timeSeconds) || 0) / Math.max(1e-9, this.decodedBuffer.duration), 0, 1);
+    const position = progress * (rows.length - 1);
+    const index1 = Math.floor(position);
+    const index2 = Math.min(rows.length - 1, index1 + 1);
+    const index0 = Math.max(0, index1 - 1);
+    const index3 = Math.min(rows.length - 1, index2 + 1);
+    const amount = position - index1;
+    const row0 = rows[index0];
+    const row1 = rows[index1];
+    const row2 = rows[index2];
+    const row3 = rows[index3];
+    let peak = 0;
+    for (let index = 0; index < destination.length; index += 1) {
+      destination[index] = clamp(
+        frequencyCatmullRom(row0[index], row1[index], row2[index], row3[index], amount),
+        0,
+        1,
+      );
+      peak = Math.max(peak, destination[index]);
+    }
+    if (peak > 1e-5) {
+      for (let index = 0; index < destination.length; index += 1) destination[index] /= peak;
+    } else {
+      destination.fill(0);
+    }
+    const smoothing = immediate ? 1 : 0.72;
+    for (let index = 0; index < destination.length; index += 1) {
+      smoothed[index] += (destination[index] - smoothed[index]) * smoothing;
+    }
+    let smoothedPeak = 0;
+    for (let index = 0; index < smoothed.length; index += 1) smoothedPeak = Math.max(smoothedPeak, smoothed[index]);
+    if (smoothedPeak > 1e-5) {
+      for (let index = 0; index < smoothed.length; index += 1) smoothed[index] /= smoothedPeak;
+    }
+    return smoothed;
+  }
+
   buildWaveformPeaks(buffer, peakCount = 4096) {
     if (!buffer || buffer.length <= 0) return null;
     const peaks = new Float32Array(peakCount);
@@ -300,6 +572,8 @@ export class AudioEngine extends EventTarget {
 
   clearWaveform({ notify = true } = {}) {
     this.frequencyData.fill(0);
+    this.frequencyGraphBuffer.fill(0);
+    this.frequencyGraphSmoothed.fill(0);
     this.waveformData.fill(128);
     this.averageEnergy = 0.08;
     this.lastBeatAt = 0;
@@ -320,6 +594,7 @@ export class AudioEngine extends EventTarget {
     const hasActiveAudio = Boolean(this.file && this.analyser && !this.audio.paused);
     if (!hasActiveAudio) {
       this.metrics = this.state.get("demoMode") && !this.file ? this.updateDemo(delta, elapsed) : this.createEmptyMetrics();
+      if (this.file) this.metrics.frequencyGraphData = this.sampleFrequencyGraphAt(this.audio.currentTime, true);
       return this.metrics;
     }
 
@@ -371,6 +646,7 @@ export class AudioEngine extends EventTarget {
       centroid: weightTotal ? weighted / weightTotal / this.frequencyData.length : 0,
       beat,
       frequencyData: this.frequencyData,
+      frequencyGraphData: this.sampleFrequencyGraphAt(this.audio.currentTime, this.audio.paused),
       waveformData: this.waveformData,
     };
     return this.metrics;
@@ -398,6 +674,7 @@ export class AudioEngine extends EventTarget {
       peak: Math.max(bass, mid, treble),
       bass, mid, treble, centroid: 0.36 + treble * 0.18, beat,
       frequencyData: this.frequencyData,
+      frequencyGraphData: this.frequencyGraphSmoothed.fill(0),
       waveformData: this.waveformData,
     };
   }
@@ -530,6 +807,7 @@ export class AudioEngine extends EventTarget {
       centroid: weightTotal ? weighted / weightTotal / Math.max(1, binCount) : 0,
       beat,
       frequencyData: this.frequencyData,
+      frequencyGraphData: this.sampleFrequencyGraphAt(timeSeconds, false),
       waveformData: this.waveformData,
     };
     return this.metrics;

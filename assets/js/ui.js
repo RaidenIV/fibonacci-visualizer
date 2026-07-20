@@ -94,6 +94,38 @@ export class UIController extends EventTarget {
     }
 
     document.querySelectorAll(".range-value-input[data-range-id]").forEach((editor) => {
+      const wrapper = editor.closest(".range-value-editor");
+      if (wrapper && wrapper.dataset.enhanced !== "true") {
+        const label = editor.getAttribute("aria-label") || "Value";
+        const decrementButton = document.createElement("button");
+        decrementButton.type = "button";
+        decrementButton.className = "range-value-stepper";
+        decrementButton.textContent = "−";
+        decrementButton.setAttribute("aria-label", `Decrease ${label}`);
+        decrementButton.title = `Decrease ${label}`;
+
+        const incrementButton = document.createElement("button");
+        incrementButton.type = "button";
+        incrementButton.className = "range-value-stepper";
+        incrementButton.textContent = "+";
+        incrementButton.setAttribute("aria-label", `Increase ${label}`);
+        incrementButton.title = `Increase ${label}`;
+
+        wrapper.appendChild(decrementButton);
+        wrapper.appendChild(incrementButton);
+        wrapper.dataset.enhanced = "true";
+
+        const stepValue = (direction) => {
+          if (direction < 0) editor.stepDown();
+          else editor.stepUp();
+          editor.dispatchEvent(new Event("input", { bubbles: true }));
+          editor.dispatchEvent(new Event("change", { bubbles: true }));
+        };
+        decrementButton.addEventListener("click", () => stepValue(-1));
+        incrementButton.addEventListener("click", () => stepValue(1));
+        editor.addEventListener("focus", () => requestAnimationFrame(() => editor.select()));
+        editor.addEventListener("wheel", () => editor.blur(), { passive: true });
+      }
       const commit = () => {
         const key = editor.dataset.rangeId;
         const range = document.getElementById(key);

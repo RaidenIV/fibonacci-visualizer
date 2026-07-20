@@ -253,7 +253,8 @@ export class HudRenderer {
   }
 
   drawFrequency(ctx, rectangle, metrics, baseLineWidth) {
-    const frequencyData = metrics.frequencyData || [];
+    const hasReferenceGraph = Boolean(metrics.frequencyGraphData?.length);
+    const frequencyData = hasReferenceGraph ? metrics.frequencyGraphData : (metrics.frequencyData || []);
     if (!frequencyData.length) return;
     const points = Math.min(128, frequencyData.length);
     const inner = 3;
@@ -275,7 +276,8 @@ export class HudRenderer {
     ctx.moveTo(drawX, drawY + drawHeight);
     for (let index = 0; index < points; index += 1) {
       const sourceIndex = Math.floor((index / Math.max(1, points - 1)) * (frequencyData.length - 1));
-      const value = clamp((frequencyData[sourceIndex] || 0) / 255, 0, 1);
+      const rawValue = frequencyData[sourceIndex] || 0;
+      const value = clamp(hasReferenceGraph ? rawValue : rawValue / 255, 0, 1);
       const x = drawX + (index / Math.max(1, points - 1)) * drawWidth;
       const y = drawY + drawHeight - value * drawHeight;
       ctx.lineTo(x, y);

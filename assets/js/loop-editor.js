@@ -8,9 +8,18 @@ function createBinaryTowerLoopController(audioEngine, appState) {
     decodedAudioBuffer: { get: () => audioEngine.decodedBuffer },
     volume: { get: () => clamp(Number(appState.get("volume")) * 100, 0, 100) },
     muted: { get: () => Boolean(appState.get("muted")) },
-    audioLoop: { get: () => Boolean(audioEngine.loopEnabled) },
-    loopStart: { get: () => Number(audioEngine.loopStart) || 0 },
-    loopEnd: { get: () => Number(audioEngine.loopEnd) || audioEngine.getDuration() },
+    audioLoop: {
+      get: () => Boolean(audioEngine.loopEnabled),
+      set: (value) => audioEngine.setLoop(Boolean(value)),
+    },
+    loopStart: {
+      get: () => Number(audioEngine.loopStart) || 0,
+      set: (value) => { audioEngine.loopStart = Number(value) || 0; },
+    },
+    loopEnd: {
+      get: () => Number(audioEngine.loopEnd) || audioEngine.getDuration(),
+      set: (value) => { audioEngine.loopEnd = Number(value) || audioEngine.getDuration(); },
+    },
     loopBpm: {
       get: () => Number(audioEngine.loopBpm) || 120,
       set: (value) => { audioEngine.loopBpm = clamp(Number(value) || 120, 40, 300); },
@@ -19,9 +28,13 @@ function createBinaryTowerLoopController(audioEngine, appState) {
       get: () => Math.max(1, Math.round(Number(audioEngine.loopBars) || 4)),
       set: (value) => { audioEngine.loopBars = Math.max(1, Math.round(Number(value) || 4)); },
     },
+    loopSnap: {
+      get: () => true,
+      set: () => {},
+    },
   });
 
-  return (() => {
+const controller = (() => {
   // ── BPM Detective popup — fully integrated with the main visualizer ──
 
   // ── Popup-local state ──
@@ -183,10 +196,12 @@ function createBinaryTowerLoopController(audioEngine, appState) {
       <div class="loop-ctrl-block loop-bars-block">
         <div class="loop-section-label">Loop Length</div>
         <div class="loop-bars-row">
-          <button class="loop-bar-btn" id="popup-bars-decr">−</button>
-          <input class="loop-bars-val" id="popup-bars-val" type="number" min="1" max="999" value="4">
-          <span class="loop-bars-unit">bars</span>
-          <button class="loop-bar-btn" id="popup-bars-incr">+</button>
+          <div class="value-editor has-suffix loop-bars-editor">
+            <input class="value-input loop-bars-val" id="popup-bars-val" type="number" min="1" max="999" value="4" aria-label="Loop Length in Bars Value">
+            <span class="value-suffix loop-bars-unit" aria-hidden="true">Bars</span>
+            <button class="value-stepper loop-bars-stepper" id="popup-bars-decr" type="button" aria-label="Decrease Loop Length">−</button>
+            <button class="value-stepper loop-bars-stepper" id="popup-bars-incr" type="button" aria-label="Increase Loop Length">+</button>
+          </div>
         </div>
         <div class="loop-time-info" id="popup-loop-time-info">—</div>
       </div>
@@ -401,6 +416,7 @@ function createBinaryTowerLoopController(audioEngine, appState) {
       mc.style.width = mmW + 'px'; mc.style.height = mmH + 'px';
       const mCtx = mc.getContext('2d'); mCtx.scale(dpr, dpr);
       if (popupBuffer) buildPeaks();
+      updateHandles($);
       renderWaveform($); renderMinimap($);
   }
 
@@ -424,7 +440,7 @@ function createBinaryTowerLoopController(audioEngine, appState) {
           $('popup-t-total').textContent   = fmtTime(popupBuffer.duration);
 
           // BPM detection
-          popupBpm = await detectBPM(popupBuffer);
+          popupBpm = await getLoopBpmDetection(popupBuffer);
           $('popup-bpm-input').value = popupBpm;
           $('popup-bpm-input').disabled = false;
           $('popup-stat-beat').textContent = (60 / popupBpm).toFixed(3) + 's';
@@ -467,46 +483,6 @@ function createBinaryTowerLoopController(audioEngine, appState) {
       $('popup-analyzing').classList.remove('show');
   }
 
-  // ── BPM detection (same algorithm as bpm_detect.html) ──
-  async function detectBPM(buf) {
-      const sr = buf.sampleRate, maxLen = Math.min(buf.length, sr * 90);
-      const mono = new Float32Array(maxLen);
-      for (let c = 0; c < buf.numberOfChannels; c++) {
-          const ch = buf.getChannelData(c);
-          for (let i = 0; i < maxLen; i++) mono[i] += ch[i];
-      }
-      if (buf.numberOfChannels > 1) for (let i = 0; i < maxLen; i++) mono[i] /= buf.numberOfChannels;
-
-      const offCtx = new OfflineAudioContext(1, maxLen, sr);
-      const ob = offCtx.createBuffer(1, maxLen, sr); ob.getChannelData(0).set(mono);
-      const src = offCtx.createBufferSource(); src.buffer = ob;
-      const lp = offCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 180; lp.Q.value = 0.8;
-      src.connect(lp); lp.connect(offCtx.destination); src.start(0);
-      const rend = await offCtx.startRendering();
-      const fd = rend.getChannelData(0);
-
-      const hop = 512, nF = Math.floor(fd.length / hop);
-      const eng = new Float32Array(nF);
-      for (let i = 0; i < nF; i++) {
-          let e = 0, off = i * hop;
-          for (let j = 0; j < hop; j++) { const s = fd[off + j]; e += s * s; }
-          eng[i] = e;
-      }
-      let eM = 0; for (let i = 0; i < nF; i++) if (eng[i] > eM) eM = eng[i];
-      if (eM > 0) for (let i = 0; i < nF; i++) eng[i] /= eM;
-
-      const fps = sr / hop, minL = Math.max(2, Math.floor(fps * 60 / 200)), maxL = Math.ceil(fps * 60 / 60);
-      let bL = minL, bC = -Infinity;
-      for (let lag = minL; lag <= maxL; lag++) {
-          let c = 0; const lim = nF - lag;
-          for (let i = 0; i < lim; i++) c += eng[i] * eng[i + lag];
-          if (c > bC) { bC = c; bL = lag; }
-      }
-      let raw = 60 * fps / bL;
-      while (raw < 80) raw *= 2; while (raw > 160) raw /= 2;
-      return Math.round(raw);
-  }
-
   // ── Peaks ──
   function buildPeaks() {
       if (!popupBuffer || cW < 1) return;
@@ -531,17 +507,17 @@ function createBinaryTowerLoopController(audioEngine, appState) {
       if (!wc) return;
       const ctx = wc.getContext('2d');
       ctx.clearRect(0, 0, cW, cH);
-      ctx.fillStyle = 'rgba(15,15,23,0.98)'; ctx.fillRect(0, 0, cW, cH);
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
+      ctx.fillStyle = '#080808'; ctx.fillRect(0, 0, cW, cH);
+      ctx.strokeStyle = 'rgba(255,255,255,0.055)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, cH / 2); ctx.lineTo(cW, cH / 2); ctx.stroke();
 
       if (!popupPeaks || !popupBuffer) {
-          ctx.fillStyle = 'rgba(168,168,182,0.72)'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
+          ctx.fillStyle = 'rgba(140,140,140,0.80)'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
           ctx.fillText('Loading…', cW / 2, cH / 2 + 4); return;
       }
 
       const lsX = timeToX(popupLoopStart), leX = timeToX(popupLoopEnd);
-      ctx.fillStyle = 'rgba(154,154,165,0.10)'; ctx.fillRect(lsX, 0, leX - lsX, cH);
+      ctx.fillStyle = 'rgba(255,42,26,0.09)'; ctx.fillRect(lsX, 0, leX - lsX, cH);
 
       // Beat grid
       if (popupBpm > 0) {
@@ -549,11 +525,11 @@ function createBinaryTowerLoopController(audioEngine, appState) {
           let first = Math.floor(popupZoomStart / bd) * bd, bi = Math.round(first / bd);
           for (let t = first; t < popupZoomEnd; t += bd, bi++) {
               const x = timeToX(t), isBar = (bi % 4 === 0);
-              ctx.strokeStyle = isBar ? 'rgba(154,154,165,0.32)' : 'rgba(154,154,165,0.12)';
+              ctx.strokeStyle = isBar ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.06)';
               ctx.lineWidth = isBar ? 0.8 : 0.5;
               ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cH); ctx.stroke();
               if (isBar) {
-                  ctx.fillStyle = 'rgba(168,168,182,0.55)'; ctx.font = '8px monospace'; ctx.textAlign = 'left';
+                  ctx.fillStyle = 'rgba(140,140,140,0.70)'; ctx.font = '8px monospace'; ctx.textAlign = 'left';
                   ctx.fillText(Math.round(t / (bd * 4)) + 1, x + 2, 10);
               }
           }
@@ -569,13 +545,13 @@ function createBinaryTowerLoopController(audioEngine, appState) {
           const h = pk * cH * 0.88, y = (cH - h) / 2;
           const t = xToTime(i), inL = (t >= popupLoopStart && t <= popupLoopEnd);
           ctx.fillStyle = inL
-              ? `rgb(${118 + pk * 55 | 0},${118 + pk * 55 | 0},${128 + pk * 55 | 0})`
-              : `rgb(${48 + pk * 42 | 0},${48 + pk * 42 | 0},${58 + pk * 42 | 0})`;
+              ? `rgba(255,${Math.round(82 + pk * 80)},${Math.round(58 + pk * 48)},${0.62 + pk * 0.34})`
+              : `rgba(120,120,120,${0.22 + pk * 0.45})`;
           ctx.fillRect(i, y, 1, Math.max(0.5, h));
       }
 
       // Loop boundary lines
-      ctx.strokeStyle = 'rgba(180,180,192,0.76)'; ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(255,42,26,0.92)'; ctx.lineWidth = 1;
       [lsX, leX].forEach(x => { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cH); ctx.stroke(); });
   }
 
@@ -585,7 +561,7 @@ function createBinaryTowerLoopController(audioEngine, appState) {
       if (!mc) return;
       const ctx = mc.getContext('2d');
       ctx.clearRect(0, 0, mmW, mmH);
-      ctx.fillStyle = 'rgba(15,15,23,0.98)'; ctx.fillRect(0, 0, mmW, mmH);
+      ctx.fillStyle = '#080808'; ctx.fillRect(0, 0, mmW, mmH);
       if (!popupPeaks || !popupBuffer) return;
 
       const N = popupPeaks.length, dur = popupBuffer.duration;
@@ -594,18 +570,18 @@ function createBinaryTowerLoopController(audioEngine, appState) {
           const pk = popupPeaks[Math.min(pi, N - 1)] || 0;
           const h = pk * mmH * 0.85, y = (mmH - h) / 2;
           const t = (i / mmW) * dur, inL = (t >= popupLoopStart && t <= popupLoopEnd);
-          ctx.fillStyle = inL ? `rgba(154,154,165,${0.42 + pk * 0.48})` : `rgba(74,74,86,${0.5 + pk * 0.38})`;
+          ctx.fillStyle = inL ? `rgba(255,42,26,${0.35 + pk * 0.5})` : `rgba(130,130,130,${0.18 + pk * 0.42})`;
           ctx.fillRect(i, y, 1, Math.max(0.5, h));
       }
 
       const vL = (popupZoomStart / dur) * mmW, vR = (popupZoomEnd / dur) * mmW;
-      ctx.fillStyle = 'rgba(154,154,165,0.10)'; ctx.fillRect(vL, 0, vR - vL, mmH);
-      ctx.strokeStyle = 'rgba(180,180,192,0.72)'; ctx.lineWidth = 1;
+      ctx.fillStyle = 'rgba(255,255,255,0.045)'; ctx.fillRect(vL, 0, vR - vL, mmH);
+      ctx.strokeStyle = 'rgba(255,255,255,0.42)'; ctx.lineWidth = 1;
       ctx.strokeRect(vL + 0.5, 0.5, Math.max(1, vR - vL - 1), mmH - 1);
 
       if (popupOffset > 0) {
           const px = (popupOffset / dur) * mmW;
-          ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(255,255,255,0.68)'; ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, mmH); ctx.stroke();
       }
   }
@@ -844,7 +820,7 @@ function createBinaryTowerLoopController(audioEngine, appState) {
   // ── Volume helpers ──
   function refreshVolSlider($) {
       const s = $('popup-vol-slider');
-      s.style.background = `linear-gradient(90deg,rgba(154,154,165,0.92) ${popupVolume}%,rgba(255,255,255,0.12) ${popupVolume}%)`;
+      s.style.background = `linear-gradient(90deg,rgba(255,42,26,0.92) ${popupVolume}%,rgba(255,255,255,0.12) ${popupVolume}%)`;
   }
   function updateVolIcon($) {
       const btn = $('popup-mute-btn');
@@ -876,16 +852,11 @@ function createBinaryTowerLoopController(audioEngine, appState) {
   function updateMainLoopButton() {
       const button = document.getElementById('loopButton');
       if (!button) return;
-      button.disabled = !state.hasAudio || !state.decodedAudioBuffer;
-      const active = Boolean(
-          state.audioLoop &&
-          state.loopEnd > state.loopStart &&
-          state.decodedAudioBuffer &&
-          state.loopEnd - state.loopStart < state.decodedAudioBuffer.duration - 1e-4
-      );
-      button.classList.toggle('loop-active', active);
+      const loop = audioEngine.getLoopState();
+      button.disabled = !loop.ready;
+      button.classList.toggle('loop-active', loop.enabled);
       button.textContent = 'Loop';
-      button.setAttribute('aria-pressed', String(active));
+      button.setAttribute('aria-pressed', String(loop.enabled));
   }
 
   function applyAudioLoop(start, end) {
@@ -904,7 +875,8 @@ function createBinaryTowerLoopController(audioEngine, appState) {
       updateMainLoopButton();
   }
   return { open: openLoopPopup, close: closePopup, syncButton: updateMainLoopButton };
-  })();
+})();
+  return controller;
 }
 
 export class LoopEditor {

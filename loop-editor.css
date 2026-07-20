@@ -21,17 +21,6 @@
       padding-left: 2px;
     }
 
-    button.loop-active {
-      background: rgba(74, 222, 128, 0.14) !important;
-      border-color: rgba(74, 222, 128, 0.58) !important;
-      color: #4ade80 !important;
-    }
-
-    button.loop-active:hover:not(:disabled) {
-      background: rgba(74, 222, 128, 0.2) !important;
-      border-color: rgba(74, 222, 128, 0.78) !important;
-    }
-
     .legacy-loop-editor {
       display: none !important;
     }
@@ -571,3 +560,351 @@
       font-size: 10px;
       line-height: 1.45;
     }
+
+/* ws.zip loop-editor color palette; layout and typography remain project-native. */
+
+#loop-modal-overlay {
+  --loop-ref-bg: #050505;
+  --loop-ref-surface: #0b0b0b;
+  --loop-ref-surface-2: #101010;
+  --loop-ref-surface-3: #151515;
+  --loop-ref-border: #242424;
+  --loop-ref-border-strong: #343434;
+  --loop-ref-text: #f5f5f5;
+  --loop-ref-muted: #8c8c8c;
+  --loop-ref-muted-2: #626262;
+  --loop-ref-accent: #ff2a1a;
+  background: rgba(0, 0, 0, 0.82);
+}
+
+#loop-modal-overlay .loop-modal-panel {
+  border-color: var(--loop-ref-border-strong);
+  background: var(--loop-ref-surface);
+  color: var(--loop-ref-text);
+}
+
+#loop-modal-overlay .loop-header,
+#loop-modal-overlay .loop-ctrl-block + .loop-ctrl-block,
+#loop-modal-overlay .loop-volume-row,
+#loop-modal-overlay .loop-status-bar {
+  border-color: var(--loop-ref-border);
+}
+
+#loop-modal-overlay .loop-title,
+#loop-modal-overlay .loop-tbtn,
+#loop-modal-overlay .loop-action-btn,
+#loop-modal-overlay .loop-close-btn,
+#loop-modal-overlay .loop-zoom-btn,
+#loop-modal-overlay .loop-bars-val {
+  color: var(--loop-ref-text) !important;
+}
+
+#loop-modal-overlay .loop-section-label,
+#loop-modal-overlay .loop-pill-label,
+#loop-modal-overlay .loop-bars-unit,
+#loop-modal-overlay .loop-time-mono,
+#loop-modal-overlay .loop-stat,
+#loop-modal-overlay .loop-check-text,
+#loop-modal-overlay .loop-vol-pct {
+  color: var(--loop-ref-muted);
+}
+
+#loop-modal-overlay .loop-bpm-hint,
+#loop-modal-overlay .loop-time-info,
+#loop-modal-overlay .loop-analyzing-text {
+  color: var(--loop-ref-muted-2);
+}
+
+#loop-modal-overlay .loop-close-btn,
+#loop-modal-overlay .loop-zoom-btn,
+#loop-modal-overlay .loop-tbtn,
+#loop-modal-overlay .loop-action-btn {
+  border-color: var(--loop-ref-border-strong) !important;
+  background: var(--loop-ref-surface-2) !important;
+}
+
+#loop-modal-overlay .loop-close-btn:hover,
+#loop-modal-overlay .loop-zoom-btn:hover,
+#loop-modal-overlay .loop-tbtn:not(:disabled):hover,
+#loop-modal-overlay .loop-action-btn:hover:not(:disabled) {
+  border-color: var(--loop-ref-accent) !important;
+  color: var(--loop-ref-accent) !important;
+  background: color-mix(in srgb, var(--loop-ref-accent) 10%, var(--loop-ref-surface-2)) !important;
+}
+
+#loop-modal-overlay .loop-tbtn.playing,
+#loop-modal-overlay .loop-apply-btn {
+  border-color: var(--loop-ref-accent) !important;
+}
+
+#loop-modal-overlay .loop-tbtn.playing {
+  color: var(--loop-ref-accent) !important;
+  background: color-mix(in srgb, var(--loop-ref-accent) 10%, var(--loop-ref-surface-2)) !important;
+}
+
+#loop-modal-overlay .loop-apply-btn {
+  color: #fff !important;
+  background: var(--loop-ref-accent) !important;
+}
+
+#loop-modal-overlay .loop-apply-btn:hover:not(:disabled) {
+  color: #fff !important;
+  background: color-mix(in srgb, var(--loop-ref-accent) 88%, #fff) !important;
+}
+
+#loop-modal-overlay .loop-clear-btn {
+  border-color: var(--loop-ref-border-strong) !important;
+  color: var(--loop-ref-text) !important;
+  background: var(--loop-ref-surface-2) !important;
+}
+
+#loop-modal-overlay .loop-waveform-wrap,
+#loop-modal-overlay .loop-minimap-wrap {
+  border-color: var(--loop-ref-border-strong);
+  background: #080808;
+}
+
+#loop-modal-overlay .loop-progress-wrap {
+  border-color: var(--loop-ref-border-strong);
+  background: #202020;
+}
+
+#loop-modal-overlay .loop-controls-section {
+  border-color: var(--loop-ref-border);
+  background: var(--loop-ref-surface);
+}
+
+#loop-modal-overlay .loop-bpm-input,
+#loop-modal-overlay .loop-stat b,
+#loop-modal-overlay .popup-handle-tag {
+  color: var(--loop-ref-text);
+  text-shadow: none;
+}
+
+#loop-modal-overlay .loop-zoom-level,
+#loop-modal-overlay .loop-bpm-unit {
+  color: var(--loop-ref-muted);
+  text-shadow: none;
+}
+
+#loop-modal-overlay .loop-bpm-input:focus {
+  border-bottom-color: var(--loop-ref-accent);
+}
+
+#loop-modal-overlay .popup-lhandle::before,
+#loop-modal-overlay .popup-handle-knob,
+#loop-modal-overlay .loop-progress-fill,
+#loop-modal-overlay .loop-dots span,
+#loop-modal-overlay .loop-check-box::after {
+  background: var(--loop-ref-accent);
+  box-shadow: none;
+}
+
+#loop-modal-overlay .popup-handle-tag {
+  border-color: color-mix(in srgb, var(--loop-ref-accent) 65%, var(--loop-ref-border));
+  background: rgba(11, 11, 11, 0.94);
+}
+
+#loop-modal-overlay .popup-handle-knob {
+  border: 1px solid color-mix(in srgb, var(--loop-ref-accent) 70%, #fff);
+}
+
+#loop-modal-overlay .loop-analyzing {
+  background: rgba(5, 5, 5, 0.78);
+}
+
+#loop-modal-overlay #popup-playhead {
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: none;
+}
+
+
+#loop-modal-overlay .loop-vol-btn {
+  color: var(--loop-ref-muted);
+}
+
+#loop-modal-overlay .loop-vol-btn:hover {
+  color: var(--loop-ref-text) !important;
+}
+
+#loop-modal-overlay .loop-pill-switch::after {
+  background: var(--loop-ref-muted-2);
+}
+
+#loop-modal-overlay .loop-pill-switch,
+#loop-modal-overlay .loop-check-box {
+  border-color: var(--loop-ref-border-strong);
+  background: var(--loop-ref-surface-2);
+  box-shadow: none;
+}
+
+#loop-modal-overlay .loop-pill-switch.on {
+  border-color: var(--loop-ref-accent);
+  background: color-mix(in srgb, var(--loop-ref-accent) 18%, var(--loop-ref-surface-2));
+}
+
+#loop-modal-overlay .loop-pill-switch.on::after {
+  background: var(--loop-ref-accent);
+}
+
+#loop-modal-overlay .loop-vol-slider {
+  background: var(--loop-ref-border-strong);
+  accent-color: var(--loop-ref-accent);
+}
+
+#loop-modal-overlay .loop-vol-slider::-webkit-slider-thumb {
+  background: var(--loop-ref-accent);
+  box-shadow: none;
+}
+
+/* Loop length uses the same composite input/stepper construction as sidebar values. */
+#loop-modal-overlay .loop-bars-row {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+#loop-modal-overlay .loop-bars-editor {
+  grid-template-columns: minmax(96px, 1fr) auto 26px 26px;
+  width: min(100%, 250px);
+  min-width: 200px;
+  min-height: 58px;
+  border-color: var(--loop-ref-border-strong);
+  background: var(--loop-ref-surface-2);
+  color: var(--loop-ref-muted);
+}
+
+#loop-modal-overlay .loop-bars-editor:hover {
+  border-color: var(--loop-ref-accent);
+}
+
+#loop-modal-overlay .loop-bars-editor:focus-within {
+  border-color: var(--loop-ref-accent);
+  background: var(--loop-ref-surface-2);
+  box-shadow: 0 0 0 2px rgba(255, 42, 26, 0.12);
+}
+
+#loop-modal-overlay .loop-bars-editor .loop-bars-val {
+  min-height: 56px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  font-size: 46px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+#loop-modal-overlay .loop-bars-editor .loop-bars-val:focus-visible {
+  outline: 0;
+  box-shadow: none;
+}
+
+#loop-modal-overlay .loop-bars-editor .loop-bars-unit {
+  min-width: 28px;
+  padding-right: 7px;
+  color: var(--loop-ref-muted);
+  font-size: 10px;
+}
+
+#loop-modal-overlay .loop-bars-editor .loop-bars-stepper {
+  border: 0;
+  border-left: 1px solid var(--loop-ref-border-strong);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.018);
+  color: var(--loop-ref-muted);
+  font-size: 15px;
+}
+
+#loop-modal-overlay .loop-bars-editor .loop-bars-stepper:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--loop-ref-accent) 10%, var(--loop-ref-surface-2));
+  color: var(--loop-ref-accent);
+}
+
+#loop-modal-overlay .loop-bars-editor .loop-bars-stepper:active:not(:disabled) {
+  background: color-mix(in srgb, var(--loop-ref-accent) 18%, var(--loop-ref-surface-2));
+}
+
+#loop-modal-overlay .loop-bars-editor .loop-bars-stepper:disabled,
+#loop-modal-overlay .loop-bars-editor .loop-bars-stepper:disabled:hover {
+  background: rgba(255, 255, 255, 0.018);
+  color: var(--loop-ref-muted-2);
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+#loop-modal-overlay .loop-bars-editor .loop-bars-stepper:focus-visible {
+  outline-color: var(--loop-ref-accent);
+}
+
+
+/* Binary Tower composite value editor dependency used by the loop-length field. */
+#loop-modal-overlay .value-editor {
+  display: inline-grid;
+  grid-template-columns: minmax(58px, 1fr) 26px 26px;
+  min-width: 116px;
+  min-height: 32px;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--loop-ref-border-strong);
+  border-radius: 6px;
+  background: var(--loop-ref-surface-2);
+  color: var(--loop-ref-accent);
+  font-family: "Cozette", "CozetteVector", monospace;
+  font-size: 11px;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+#loop-modal-overlay .value-editor.has-suffix {
+  grid-template-columns: minmax(52px, 1fr) auto 26px 26px;
+  min-width: 126px;
+}
+
+#loop-modal-overlay .value-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 6px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--loop-ref-text);
+  font-family: "Cozette", "CozetteVector", monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+#loop-modal-overlay .value-input::-webkit-inner-spin-button,
+#loop-modal-overlay .value-input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#loop-modal-overlay .value-suffix {
+  display: grid;
+  min-width: 20px;
+  place-items: center start;
+  padding: 0 6px 0 2px;
+  color: var(--loop-ref-muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+#loop-modal-overlay .value-stepper {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--loop-ref-border-strong);
+  background: rgba(255,255,255,0.018);
+  color: var(--loop-ref-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1;
+  transition: background-color 120ms ease, color 120ms ease;
+}
