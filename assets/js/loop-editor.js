@@ -1,5 +1,96 @@
 import { clamp } from "./utils.js";
 
+async function detectLoopBpm(audioBuffer) {
+  const OfflineContext = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OfflineContext) throw new Error("Offline audio analysis is unavailable.");
+
+  const sampleRate = audioBuffer.sampleRate;
+  const maxLength = Math.min(audioBuffer.length, sampleRate * 90);
+  const mono = new Float32Array(maxLength);
+  for (let channelIndex = 0; channelIndex < audioBuffer.numberOfChannels; channelIndex += 1) {
+    const channel = audioBuffer.getChannelData(channelIndex);
+    for (let index = 0; index < maxLength; index += 1) mono[index] += channel[index];
+  }
+  if (audioBuffer.numberOfChannels > 1) {
+    const scale = 1 / audioBuffer.numberOfChannels;
+    for (let index = 0; index < maxLength; index += 1) mono[index] *= scale;
+  }
+
+  const offline = new OfflineContext(1, maxLength, sampleRate);
+  const analysisBuffer = offline.createBuffer(1, maxLength, sampleRate);
+  analysisBuffer.getChannelData(0).set(mono);
+  const source = offline.createBufferSource();
+  source.buffer = analysisBuffer;
+  const lowPass = offline.createBiquadFilter();
+  lowPass.type = "lowpass";
+  lowPass.frequency.value = 180;
+  lowPass.Q.value = 0.8;
+  source.connect(lowPass);
+  lowPass.connect(offline.destination);
+  source.start();
+  const rendered = await offline.startRendering();
+  const filtered = rendered.getChannelData(0);
+
+  const hopSize = 512;
+  const frameCount = Math.floor(filtered.length / hopSize);
+  const energy = new Float32Array(frameCount);
+  let maximumEnergy = 0;
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    let sum = 0;
+    const offset = frame * hopSize;
+    for (let index = 0; index < hopSize; index += 1) {
+      const sample = filtered[offset + index];
+      sum += sample * sample;
+    }
+    energy[frame] = sum;
+    maximumEnergy = Math.max(maximumEnergy, sum);
+  }
+  if (maximumEnergy <= 0) throw new Error("No usable beat energy was detected.");
+  for (let index = 0; index < energy.length; index += 1) energy[index] /= maximumEnergy;
+
+  const framesPerSecond = sampleRate / hopSize;
+  const minimumLag = Math.max(2, Math.floor(framesPerSecond * 60 / 200));
+  const maximumLag = Math.min(frameCount - 1, Math.ceil(framesPerSecond * 60 / 60));
+  let bestLag = minimumLag;
+  let bestCorrelation = -Infinity;
+  for (let lag = minimumLag; lag <= maximumLag; lag += 1) {
+    let correlation = 0;
+    const limit = frameCount - lag;
+    for (let index = 0; index < limit; index += 1) {
+      correlation += energy[index] * energy[index + lag];
+    }
+    if (correlation > bestCorrelation) {
+      bestCorrelation = correlation;
+      bestLag = lag;
+    }
+  }
+
+  let bpm = 60 * framesPerSecond / bestLag;
+  while (bpm < 80) bpm *= 2;
+  while (bpm > 160) bpm /= 2;
+  if (!Number.isFinite(bpm)) throw new Error("BPM detection failed.");
+  return Math.round(bpm);
+}
+
+let cachedLoopBpmBuffer = null;
+let cachedLoopBpmPromise = null;
+
+function getLoopBpmDetection(audioBuffer) {
+  if (cachedLoopBpmBuffer === audioBuffer && cachedLoopBpmPromise) {
+    return cachedLoopBpmPromise;
+  }
+
+  cachedLoopBpmBuffer = audioBuffer;
+  cachedLoopBpmPromise = detectLoopBpm(audioBuffer).catch((error) => {
+    if (cachedLoopBpmBuffer === audioBuffer) {
+      cachedLoopBpmBuffer = null;
+      cachedLoopBpmPromise = null;
+    }
+    throw error;
+  });
+  return cachedLoopBpmPromise;
+}
+
 function createBinaryTowerLoopController(audioEngine, appState) {
   const audio = audioEngine.audio;
   const state = {};
@@ -439,8 +530,14 @@ const controller = (() => {
           $('popup-stat-dur').textContent  = fmtDur(popupBuffer.duration);
           $('popup-t-total').textContent   = fmtTime(popupBuffer.duration);
 
-          // BPM detection
-          popupBpm = await getLoopBpmDetection(popupBuffer);
+          // BPM detection uses the same Binary Tower analysis, but a tempo-analysis
+          // failure must not prevent an already-decoded AudioBuffer from opening.
+          try {
+              popupBpm = await getLoopBpmDetection(popupBuffer);
+          } catch (bpmError) {
+              console.warn('Loop BPM detection failed; using the existing tempo.', bpmError);
+              popupBpm = clamp(state.loopBpm || popupBpm || 120, 40, 300);
+          }
           $('popup-bpm-input').value = popupBpm;
           $('popup-bpm-input').disabled = false;
           $('popup-stat-beat').textContent = (60 / popupBpm).toFixed(3) + 's';
@@ -477,7 +574,7 @@ const controller = (() => {
 
       } catch (err) {
           console.error('Popup audio init error:', err);
-          $('popup-analyzing').querySelector('.loop-analyzing-text').textContent = 'Error decoding audio.';
+          $('popup-analyzing').querySelector('.loop-analyzing-text').textContent = 'Error loading loop editor.';
           return;
       }
       $('popup-analyzing').classList.remove('show');
