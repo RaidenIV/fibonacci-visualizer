@@ -926,9 +926,9 @@ select:focus, input[type="text"]:focus { border-color: var(--accent); }
 }
 
 .sidebar .loop-control > button.loop-active {
-  border-color: #4f86e8;
-  background: rgba(79, 134, 232, 0.13);
-  color: #77a5f5;
+  border-color: rgba(74, 222, 128, 0.50);
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.28), rgba(34, 197, 94, 0.18));
+  color: #4ade80;
 }
 
 .sidebar .loop-status {
@@ -1907,56 +1907,91 @@ body.loop-editor-open {
 
 .sidebar .range-value-editor {
   display: inline-grid;
-  grid-template-columns: minmax(58px, 1fr) auto 26px 26px;
+  grid-template-columns: minmax(58px, 1fr) 26px 26px;
+  min-height: 25px;
   align-items: stretch;
-  gap: 0;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.045);
+  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
 }
 
-.sidebar .range-value-editor:not(:has(.range-value-suffix)) {
-  grid-template-columns: minmax(58px, 1fr) 26px 26px;
+.sidebar .range-value-editor:has(.range-value-suffix) {
+  grid-template-columns: minmax(52px, 1fr) auto 26px 26px;
+}
+
+.sidebar .range-value-editor:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.sidebar .range-value-editor:has(input.range-value-input:focus) {
+  border-color: rgba(96, 165, 250, 0.70);
+  background: rgba(59, 130, 246, 0.10);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.16);
 }
 
 .sidebar input.range-value-input {
   width: 100%;
-  border-radius: 6px 0 0 6px;
+  min-width: 0;
+  min-height: 23px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font-family: "Rajdhani", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.sidebar input.range-value-input::-webkit-inner-spin-button,
+.sidebar input.range-value-input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .sidebar .range-value-suffix {
   display: grid;
-  min-width: 22px;
-  place-items: center;
-  padding: 0 5px 0 2px;
-  border-top: 1px solid rgba(255, 255, 255, 0.10);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.045);
+  min-width: 0;
+  place-items: center start;
+  padding: 0 5px 0 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.44);
+  font-family: "Rajdhani", sans-serif;
+  font-size: 11px;
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .sidebar .range-value-stepper {
   display: grid;
   min-width: 0;
-  min-height: 25px;
   place-items: center;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-left: 0;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 0;
-  background: rgba(255, 255, 255, 0.045);
+  background: transparent;
   color: rgba(255, 255, 255, 0.58);
   cursor: pointer;
   font-family: "Rajdhani", sans-serif;
   font-size: 15px;
   font-weight: 600;
   line-height: 1;
-  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
-}
-
-.sidebar .range-value-stepper:last-child {
-  border-radius: 0 6px 6px 0;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .sidebar .range-value-stepper:hover {
-  border-color: rgba(96, 165, 250, 0.55);
   background: rgba(59, 130, 246, 0.15);
   color: #ffffff;
 }
@@ -1985,41 +2020,6 @@ body.loop-editor-open {
 
 .sidebar .file-drop:focus-within {
   outline-offset: -2px;
-}
-
-/* Preserve the Galaxy value-readout styling while adding Binary Tower step buttons. */
-.sidebar .range-value-editor,
-.sidebar .range-value-editor:not(:has(.range-value-suffix)) {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  overflow: visible;
-}
-
-.sidebar input.range-value-input {
-  width: 64px;
-  border-radius: 6px;
-}
-
-.sidebar .range-value-suffix {
-  display: inline;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
-.sidebar .range-value-stepper {
-  width: 25px;
-  min-width: 25px;
-  min-height: 25px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.045);
-}
-
-.sidebar .range-value-stepper:last-child {
-  border-radius: 6px;
 }
 
 .sidebar .file-drop:hover,
