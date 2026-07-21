@@ -239,6 +239,20 @@
           <div class="drop-overlay" id="dropOverlay">
             <div class="drop-overlay__target"><span>＋</span><strong>DROP AUDIO TO LOAD</strong><small>Local processing only</small></div>
           </div>
+          <div class="video-export-overlay" id="videoExportOverlay" hidden aria-live="polite" aria-label="Video export progress">
+            <div class="video-export-overlay__shade" aria-hidden="true"></div>
+            <div class="video-export-overlay__content" role="status">
+              <span class="video-export-overlay__eyebrow">OFFLINE VIDEO RENDER</span>
+              <strong class="video-export-overlay__title" id="videoExportOverlayTitle">EXPORTING VIDEO</strong>
+              <div class="video-export-overlay__detail" id="videoExportOverlayDetail">Preparing encoder · 0%</div>
+              <div class="video-export-overlay__progress-row">
+                <progress id="videoExportOverlayProgress" max="100" value="0" aria-label="Video export progress"></progress>
+                <span id="videoExportOverlayProgressText">0%</span>
+              </div>
+              <small class="video-export-overlay__meta" id="videoExportOverlayMeta">The viewport is frozen while frames are rendered and encoded.</small>
+              <button class="action-button video-export-overlay__cancel" id="videoExportCancel" type="button">CANCEL EXPORT</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -250,6 +264,6 @@
 
   <script src="./vendor/three.global.js"></script>
   <script src="./vendor/controls/OrbitControls.global.js"></script>
-  <script type="module" src="./assets/js/app.js"></script>
+  <script type="module" src="./assets/js/app.js?v=20260721-1717"></script>
 </body>
 </html>

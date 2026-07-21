@@ -2,8 +2,8 @@ import { StateStore } from "./state.js";
 import { AudioEngine } from "./audio-engine.js";
 import { FibonacciVisualizer } from "./fibonacci-visualizer.js";
 import { HudRenderer } from "./hud.js";
-import { Exporter } from "./exporter.js";
-import { UIController } from "./ui.js?v=20260720-2356-2";
+import { Exporter } from "./exporter.js?v=20260721-1717";
+import { UIController } from "./ui.js?v=20260721-1717";
 import { QUALITY_PRESETS } from "./config.js";
 
 class FibonacciAudioFieldApp {
@@ -79,6 +79,13 @@ class FibonacciAudioFieldApp {
 
   animate(now) {
     requestAnimationFrame(this.animate);
+    if (this.exporter.isExporting()) {
+      // Export frames are rendered deterministically by Exporter. Keep the
+      // visible viewport frozen so the preview does not run in parallel and
+      // mutate the same visualizer state while video frames are being encoded.
+      this.lastFrameAt = now;
+      return;
+    }
     const delta = Math.min(0.05, Math.max(0.001, (now - this.lastFrameAt) / 1000));
     const elapsed = (now - this.startedAt) / 1000;
     this.lastFrameAt = now;
@@ -92,7 +99,6 @@ class FibonacciAudioFieldApp {
     this.hud.updateFps(now);
     const hudPreset = QUALITY_PRESETS[this.state.get("quality")] || QUALITY_PRESETS.balanced;
     if (now - this.hud.lastDrawAt >= 1000 / hudPreset.hudFps) this.hud.draw(this.metrics, meta, now);
-    this.exporter.renderFrame(this.metrics, meta);
     if (now - this.lastUiUpdateAt > 200) {
       this.ui.updateRuntime(meta);
       this.lastUiUpdateAt = now;

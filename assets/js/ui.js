@@ -28,7 +28,7 @@ export class UIController extends EventTarget {
   }
 
   collectElements() {
-    const ids = ["appShell","sidebar","closeSidebar","sidebarToggleIcon","audioFile","audioStatus","audioFileLabel","trackName","trackDuration","trackFormat","trackSize","fileDrop","dropOverlay","audio","playPause","clearWaveform","loopButton","loopStatus","seek","currentTime","totalTime","viewportFrame","safeArea","rendererInfo","drawCalls","gpuPoints","pixelRatio","qualityBadge","exportVideo","exportPng","exportSettings","importSettings","resetSettings","recordingStatus","exportProgress","exportProgressLabel","exportProgressValue","exportProgressBar","exportProgressMeta","toastStack"];
+    const ids = ["appShell","sidebar","closeSidebar","sidebarToggleIcon","audioFile","audioStatus","audioFileLabel","trackName","trackDuration","trackFormat","trackSize","fileDrop","dropOverlay","audio","playPause","clearWaveform","loopButton","loopStatus","seek","currentTime","totalTime","viewportFrame","safeArea","rendererInfo","drawCalls","gpuPoints","pixelRatio","qualityBadge","exportVideo","exportPng","exportSettings","importSettings","resetSettings","recordingStatus","exportProgress","exportProgressLabel","exportProgressValue","exportProgressBar","exportProgressMeta","exportResolution","exportFps","exportFormat","exportBitrate","exportRange","exportFileName","videoExportOverlay","videoExportOverlayTitle","videoExportOverlayDetail","videoExportOverlayProgress","videoExportOverlayProgressText","videoExportOverlayMeta","videoExportCancel","toastStack"];
     const elements = {};
     for (const id of ids) elements[id] = document.getElementById(id);
     return elements;
@@ -178,13 +178,18 @@ export class UIController extends EventTarget {
       this.toast("Waveform history cleared.");
     });
     this.elements.loopButton.addEventListener("click", () => this.loopEditor.open());
-    this.elements.seek.addEventListener("input", () => this.audioEngine.seek(Number(this.elements.seek.value)));
+    this.elements.seek.addEventListener("input", () => {
+      const playbackWindow = this.getPlaybackWindow();
+      this.audioEngine.seek(playbackWindow.start + Number(this.elements.seek.value));
+      this.syncPlayback();
+    });
     this.elements.closeSidebar.addEventListener("click", () => this.toggleSidebar());
     document.querySelectorAll("[data-camera]").forEach((button) => button.addEventListener("click", () => this.visualizer.setCameraPreset(button.dataset.camera)));
     document.querySelectorAll("[data-preset]").forEach((button) => button.addEventListener("click", () => this.state.applyPreset(button.dataset.preset)));
 
-    this.elements.exportVideo.addEventListener("click", () => this.exporter.start().catch((error) => this.toast(error.message, "error")));
-    this.exporter.addEventListener("error", (event) => this.toast(event.detail?.message || "Video export failed.", "error"));
+    this.elements.exportVideo.addEventListener("click", () => this.toggleVideoExport());
+    this.elements.videoExportCancel.addEventListener("click", () => this.cancelVideoExport());
+    this.exporter.addEventListener("error", (event) => this.showExportError(event.detail?.message || "Video export failed."));
     this.elements.exportPng.addEventListener("click", () => this.dispatchEvent(new Event("export-png")));
     this.elements.exportSettings.addEventListener("click", () => this.exportSettings());
     this.elements.importSettings.addEventListener("change", () => this.importSettings(this.elements.importSettings.files?.[0]));
@@ -199,6 +204,7 @@ export class UIController extends EventTarget {
     this.exporter.addEventListener("finish", (event) => this.showExportFinish(event.detail));
 
     document.addEventListener("keydown", (event) => {
+      if (this.exporter.isExporting()) return;
       if (event.target.matches("input, select, textarea")) return;
       if (event.code === "Space") { event.preventDefault(); this.audioEngine.togglePlayback().catch((error) => this.toast(error.message, "error")); }
       if (event.key.toLowerCase() === "h") this.state.set("showHud", !this.state.get("showHud"));
@@ -208,7 +214,7 @@ export class UIController extends EventTarget {
   }
 
   async loadSelectedFile(file) {
-    if (!file) return;
+    if (!file || this.exporter.isExporting()) return;
     this.elements.audioStatus.textContent = "LOADING";
     try {
       await this.audioEngine.loadFile(file);
@@ -259,24 +265,75 @@ export class UIController extends EventTarget {
     requestAnimationFrame(() => this.visualizer.resize(true));
   }
 
+  getPlaybackWindow() {
+    const trackDuration = this.audioEngine.getDuration();
+    const loop = this.audioEngine.getLoopState();
+    if (loop.enabled && loop.duration > 0.01) {
+      return { start: loop.start, end: loop.end, duration: loop.duration, looped: true };
+    }
+    return { start: 0, end: trackDuration, duration: trackDuration, looped: false };
+  }
+
+  toggleVideoExport() {
+    if (this.exporter.isExporting()) {
+      this.cancelVideoExport();
+      return;
+    }
+    this.exporter.start().catch((error) => {
+      if (error?.name !== "AbortError") this.toast(error.message || "Video export failed.", "error");
+    });
+  }
+
+  cancelVideoExport() {
+    if (!this.exporter.isExporting()) return;
+    this.elements.videoExportCancel.disabled = true;
+    this.elements.videoExportCancel.textContent = "CANCELLING…";
+    this.elements.videoExportOverlayDetail.textContent = "Cancelling export…";
+    this.elements.exportVideo.disabled = true;
+    this.elements.exportVideo.textContent = "CANCELLING…";
+    this.exporter.stop(true);
+  }
+
+  setExportControlsDisabled(disabled) {
+    for (const element of [
+      this.elements.exportPng,
+      this.elements.exportSettings,
+      this.elements.importSettings,
+      this.elements.resetSettings,
+      this.elements.exportResolution,
+      this.elements.exportFps,
+      this.elements.exportFormat,
+      this.elements.exportBitrate,
+      this.elements.exportRange,
+      this.elements.exportFileName,
+    ]) {
+      if (element) element.disabled = disabled;
+    }
+  }
+
   syncPlayback() {
     const audio = this.audioEngine.audio;
     const hasAudio = Boolean(this.audioEngine.file);
-    this.elements.playPause.disabled = !hasAudio;
-    this.elements.clearWaveform.disabled = !hasAudio;
-    this.elements.seek.disabled = !hasAudio;
+    const playbackWindow = this.getPlaybackWindow();
+    const relativeTime = hasAudio
+      ? clamp((Number(audio.currentTime) || 0) - playbackWindow.start, 0, Math.max(0, playbackWindow.duration))
+      : 0;
+
+    this.elements.playPause.disabled = !hasAudio || this.exporter.isExporting();
+    this.elements.clearWaveform.disabled = !hasAudio || this.exporter.isExporting();
+    this.elements.seek.disabled = !hasAudio || this.exporter.isExporting();
     this.elements.playPause.textContent = hasAudio && !audio.paused ? "Pause" : "Play";
     this.elements.audioStatus.textContent = hasAudio ? (!audio.paused ? "PLAYING" : "READY") : this.state.get("demoMode") ? "DEMO" : "IDLE";
-    this.elements.currentTime.textContent = formatTime(hasAudio ? audio.currentTime : 0);
-    this.elements.totalTime.textContent = formatTime(hasAudio ? audio.duration : 0);
-    this.elements.seek.max = Number.isFinite(audio.duration) ? audio.duration : 1;
-    if (!this.elements.seek.matches(":active")) this.elements.seek.value = hasAudio ? audio.currentTime : 0;
+    this.elements.currentTime.textContent = formatTime(relativeTime);
+    this.elements.totalTime.textContent = formatTime(hasAudio ? playbackWindow.duration : 0);
+    this.elements.seek.max = Math.max(0.001, playbackWindow.duration || 0.001);
+    if (!this.elements.seek.matches(":active")) this.elements.seek.value = relativeTime;
     this.syncLoop();
   }
 
   syncLoop() {
     const loop = this.audioEngine.getLoopState();
-    this.elements.loopButton.disabled = !loop.ready;
+    this.elements.loopButton.disabled = !loop.ready || this.exporter.isExporting();
     this.elements.loopButton.classList.toggle("loop-active", loop.enabled);
     this.elements.loopButton.setAttribute("aria-pressed", String(loop.enabled));
     if (!loop.ready) {
@@ -312,33 +369,72 @@ export class UIController extends EventTarget {
   }
 
   showExportStart(detail) {
-    this.elements.recordingStatus.textContent = "RECORDING";
-    this.elements.exportVideo.textContent = "STOP & SAVE VIDEO";
+    this.elements.recordingStatus.textContent = "EXPORTING";
+    this.elements.exportVideo.textContent = "CANCEL EXPORT";
     this.elements.exportVideo.classList.add("is-recording");
+    this.elements.exportVideo.disabled = false;
     this.elements.exportProgress.hidden = false;
     this.elements.exportProgressLabel.textContent = `${detail.format || "VIDEO"} // ${detail.width}×${detail.height} @ ${detail.fps} FPS`;
-    this.elements.exportProgressMeta.textContent = detail.duration > 0
-      ? detail.realtime === false
-        ? `Encoding ${formatTime(detail.duration)} frame by frame with encoder backpressure.`
-        : `Capturing ${formatTime(detail.duration)} in real time.`
-      : "Capturing until stopped.";
+    const rangeLabel = detail.rangeSource === "loop"
+      ? "ACTIVE LOOP"
+      : detail.rangeSource === "current"
+        ? "CURRENT TIME → END"
+        : "FULL TRACK";
+    this.elements.exportProgressMeta.textContent = `Rendering ${formatTime(detail.duration)} frame by frame · ${rangeLabel}.`;
+    this.elements.exportProgressValue.textContent = "0%";
+    this.elements.exportProgressBar.value = 0;
+
+    this.setExportControlsDisabled(true);
+    this.elements.viewportFrame.classList.add("is-exporting");
+    this.elements.videoExportOverlay.hidden = false;
+    this.elements.videoExportOverlayTitle.textContent = `EXPORTING ${detail.format || "VIDEO"}`;
+    this.elements.videoExportOverlayDetail.textContent = `Preparing encoder · 0%`;
+    this.elements.videoExportOverlayProgress.value = 0;
+    this.elements.videoExportOverlayProgressText.textContent = "0%";
+    this.elements.videoExportOverlayMeta.textContent = `${detail.width}×${detail.height} · ${detail.fps} FPS · ${rangeLabel}`;
+    this.elements.videoExportCancel.disabled = false;
+    this.elements.videoExportCancel.textContent = "CANCEL EXPORT";
+    this.elements.videoExportOverlay.style.backgroundImage = detail.previewFrame ? `url(${JSON.stringify(detail.previewFrame)})` : "none";
+    this.syncPlayback();
   }
 
   showExportProgress(detail) {
-    const percent = detail.duration > 0 ? Math.round(detail.progress * 100) : 0;
-    this.elements.exportProgressValue.textContent = detail.duration > 0 ? `${percent}%` : formatTime(detail.elapsed);
-    this.elements.exportProgressBar.value = percent;
-    this.elements.exportProgressMeta.textContent = detail.message || (detail.duration > 0
+    const percent = detail.duration > 0 ? Math.round(clamp(detail.progress, 0, 1) * 100) : 0;
+    const percentText = detail.duration > 0 ? `${percent}%` : formatTime(detail.elapsed);
+    const message = detail.message || (detail.duration > 0
       ? `${formatTime(detail.elapsed)} encoded // ${formatTime(Math.max(0, detail.duration - detail.elapsed))} remaining`
       : `${formatTime(detail.elapsed)} captured`);
+
+    this.elements.exportProgressValue.textContent = percentText;
+    this.elements.exportProgressBar.value = percent;
+    this.elements.exportProgressMeta.textContent = message;
+    this.elements.videoExportOverlayProgress.value = percent;
+    this.elements.videoExportOverlayProgressText.textContent = percentText;
+    this.elements.videoExportOverlayDetail.textContent = `${message} · ${percentText}`;
+  }
+
+  showExportError(message) {
+    this.elements.videoExportOverlayTitle.textContent = "EXPORT ERROR";
+    this.elements.videoExportOverlayDetail.textContent = message;
+    this.toast(message, "error");
   }
 
   showExportFinish(detail) {
     this.elements.recordingStatus.textContent = "READY";
     this.elements.exportVideo.textContent = "START VIDEO EXPORT";
     this.elements.exportVideo.classList.remove("is-recording");
+    this.elements.exportVideo.disabled = false;
     this.elements.exportProgress.hidden = true;
-    this.toast(detail.cancelled ? "Video export cancelled." : "Video export complete.", detail.cancelled ? "info" : "success");
+    this.setExportControlsDisabled(false);
+    this.elements.viewportFrame.classList.remove("is-exporting");
+    this.elements.videoExportOverlay.hidden = true;
+    this.elements.videoExportOverlay.style.backgroundImage = "none";
+    this.elements.videoExportCancel.disabled = false;
+    this.elements.videoExportCancel.textContent = "CANCEL EXPORT";
+    this.syncPlayback();
+    if (!detail.failed) {
+      this.toast(detail.cancelled ? "Video export cancelled." : "Video export complete.", detail.cancelled ? "info" : "success");
+    }
   }
 
   exportSettings() {
