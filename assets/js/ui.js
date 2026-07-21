@@ -1,4 +1,4 @@
-import { LoopEditor } from "./loop-editor.js";
+import { LoopEditor } from "./loop-editor.js?v=20260720-2356-2";
 import { clamp, createToast, formatBytes, formatTime, getExtension } from "./utils.js";
 
 const CONTROL_FORMATS = {

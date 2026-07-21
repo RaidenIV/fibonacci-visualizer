@@ -512,45 +512,42 @@ const controller = (() => {
   }
 
   // ── Init audio ──
-  async function initPopupAudio(buffer) {
+  // The file has already been decoded by AudioEngine. Initialize the editor from
+  // that AudioBuffer immediately and run BPM analysis in the background. Creating
+  // a second AudioContext here caused some browsers to report a misleading
+  // decode failure before the waveform could render.
+  function initPopupAudio(buffer) {
       const overlay = document.getElementById('loop-modal-overlay');
       if (!overlay) return;
       const $ = id => overlay.querySelector('#' + id);
-      $('popup-analyzing').classList.add('show');
+      const analyzing = $('popup-analyzing');
+      analyzing.classList.add('show');
 
       try {
-          popupCtx = new (window.AudioContext || window.webkitAudioContext)();
-          popupGain = popupCtx.createGain();
-          popupGain.gain.value = popupVolume / 100;
-          popupGain.connect(popupCtx.destination);
+          if (!buffer || typeof buffer.getChannelData !== 'function' || !(buffer.duration > 0)) {
+              throw new Error('The decoded audio buffer is unavailable.');
+          }
 
           popupBuffer = buffer;
+          popupBpm = clamp(state.loopBpm || popupBpm || 120, 40, 300);
 
-          $('popup-stat-rate').textContent = popupBuffer.sampleRate + ' Hz';
-          $('popup-stat-dur').textContent  = fmtDur(popupBuffer.duration);
-          $('popup-t-total').textContent   = fmtTime(popupBuffer.duration);
-
-          // BPM detection uses the same Binary Tower analysis, but a tempo-analysis
-          // failure must not prevent an already-decoded AudioBuffer from opening.
-          try {
-              popupBpm = await getLoopBpmDetection(popupBuffer);
-          } catch (bpmError) {
-              console.warn('Loop BPM detection failed; using the existing tempo.', bpmError);
-              popupBpm = clamp(state.loopBpm || popupBpm || 120, 40, 300);
-          }
+          $('popup-stat-rate').textContent = `${popupBuffer.sampleRate} Hz`;
+          $('popup-stat-dur').textContent = fmtDur(popupBuffer.duration);
+          $('popup-t-total').textContent = fmtTime(popupBuffer.duration);
           $('popup-bpm-input').value = popupBpm;
           $('popup-bpm-input').disabled = false;
-          $('popup-stat-beat').textContent = (60 / popupBpm).toFixed(3) + 's';
+          $('popup-stat-beat').textContent = `${(60 / popupBpm).toFixed(3)}s`;
 
-          // If existing loop in state, use it
+          // If an existing loop is active, preserve its exact range and tempo.
           if (state.audioLoop && state.loopEnd > state.loopStart) {
-              popupLoopStart = state.loopStart;
-              popupLoopEnd   = state.loopEnd;
+              popupLoopStart = clamp(state.loopStart, 0, popupBuffer.duration);
+              popupLoopEnd = clamp(state.loopEnd, popupLoopStart, popupBuffer.duration);
               if (state.loopBpm > 0) {
-                  popupBpm = state.loopBpm;
+                  popupBpm = clamp(state.loopBpm, 40, 300);
                   $('popup-bpm-input').value = popupBpm;
-                  const bd = (60 / popupBpm) * 4;
-                  popupLoopBars = Math.max(1, Math.round((popupLoopEnd - popupLoopStart) / bd));
+                  $('popup-stat-beat').textContent = `${(60 / popupBpm).toFixed(3)}s`;
+                  const barDuration = (60 / popupBpm) * 4;
+                  popupLoopBars = Math.max(1, Math.round((popupLoopEnd - popupLoopStart) / barDuration));
                   $('popup-bars-val').value = popupLoopBars;
               }
           } else {
@@ -559,25 +556,71 @@ const controller = (() => {
           }
 
           popupZoomStart = 0;
-          popupZoomEnd   = popupBuffer.duration;
+          popupZoomEnd = popupBuffer.duration;
           updateZoomDisplay($);
 
           buildPeaks();
-          renderWaveform($); renderMinimap($);
+          renderWaveform($);
+          renderMinimap($);
           syncBarsLimit($);
-          updateHandles($); updateLoopInfo($);
+          updateHandles($);
+          updateLoopInfo($);
 
           $('popup-play-btn').disabled = false;
           $('popup-stop-btn').disabled = false;
           $('popup-apply-btn').disabled = false;
           popupOffset = popupLoopStart;
-
-      } catch (err) {
-          console.error('Popup audio init error:', err);
-          $('popup-analyzing').querySelector('.loop-analyzing-text').textContent = 'Error loading loop editor.';
+          analyzing.classList.remove('show');
+      } catch (error) {
+          console.error('Loop editor initialization error:', error);
+          analyzing.querySelector('.loop-analyzing-text').textContent = 'Unable to load loop editor.';
           return;
       }
-      $('popup-analyzing').classList.remove('show');
+
+      // Tempo detection is optional and must never block or invalidate the editor.
+      // Do not replace an explicitly applied loop tempo while analysis is running.
+      const analyzedBuffer = popupBuffer;
+      getLoopBpmDetection(analyzedBuffer)
+          .then((detectedBpm) => {
+              const activeOverlay = document.getElementById('loop-modal-overlay');
+              if (!activeOverlay || popupBuffer !== analyzedBuffer || state.audioLoop) return;
+              const query = id => activeOverlay.querySelector(`#${id}`);
+              popupBpm = clamp(detectedBpm, 40, 300);
+              query('popup-bpm-input').value = popupBpm;
+              query('popup-stat-beat').textContent = `${(60 / popupBpm).toFixed(3)}s`;
+              applyLoopChange(query);
+          })
+          .catch((error) => {
+              console.warn('Loop BPM detection failed; keeping the current tempo.', error);
+          });
+  }
+
+  async function ensurePopupAudioContext() {
+      if (popupCtx && popupCtx.state !== 'closed' && popupGain) {
+          if (popupCtx.state === 'suspended') {
+              try { await popupCtx.resume(); } catch (_) {}
+          }
+          return true;
+      }
+
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return false;
+
+      try {
+          popupCtx = new AudioContextClass();
+          popupGain = popupCtx.createGain();
+          popupGain.gain.value = popupMuted ? 0 : popupVolume / 100;
+          popupGain.connect(popupCtx.destination);
+          if (popupCtx.state === 'suspended') {
+              try { await popupCtx.resume(); } catch (_) {}
+          }
+          return true;
+      } catch (error) {
+          console.error('Loop preview audio context error:', error);
+          popupCtx = null;
+          popupGain = null;
+          return false;
+      }
   }
 
   // ── Peaks ──
@@ -837,9 +880,9 @@ const controller = (() => {
   }
 
   // ── Playback ──
-  function popupPlay($) {
-      if (!popupBuffer || !popupCtx) return;
-      if (popupCtx.state === 'suspended') popupCtx.resume();
+  async function popupPlay($) {
+      if (!popupBuffer) return;
+      if (!(await ensurePopupAudioContext())) return;
       if (popupForceRestartFromLoopStart) popupOffset = popupLoopStart;
       if (popupLoopOn && (popupOffset < popupLoopStart || popupOffset >= popupLoopEnd)) popupOffset = popupLoopStart;
       popupSource = popupCtx.createBufferSource();

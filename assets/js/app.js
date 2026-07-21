@@ -3,7 +3,7 @@ import { AudioEngine } from "./audio-engine.js";
 import { FibonacciVisualizer } from "./fibonacci-visualizer.js";
 import { HudRenderer } from "./hud.js";
 import { Exporter } from "./exporter.js";
-import { UIController } from "./ui.js";
+import { UIController } from "./ui.js?v=20260720-2356-2";
 import { QUALITY_PRESETS } from "./config.js";
 
 class FibonacciAudioFieldApp {
@@ -79,10 +79,6 @@ class FibonacciAudioFieldApp {
 
   animate(now) {
     requestAnimationFrame(this.animate);
-    if (this.exporter.isOfflineMkvExporting()) {
-      this.lastFrameAt = now;
-      return;
-    }
     const delta = Math.min(0.05, Math.max(0.001, (now - this.lastFrameAt) / 1000));
     const elapsed = (now - this.startedAt) / 1000;
     this.lastFrameAt = now;
