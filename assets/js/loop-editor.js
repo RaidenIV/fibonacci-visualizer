@@ -116,8 +116,8 @@ function createBinaryTowerLoopController(audioEngine, appState) {
       set: (value) => { audioEngine.loopBpm = clamp(Number(value) || 120, 40, 300); },
     },
     loopBars: {
-      get: () => Math.max(1, Math.round(Number(audioEngine.loopBars) || 4)),
-      set: (value) => { audioEngine.loopBars = Math.max(1, Math.round(Number(value) || 4)); },
+      get: () => Math.max(1, Math.round(Number(audioEngine.loopBars) || 8)),
+      set: (value) => { audioEngine.loopBars = Math.max(1, Math.round(Number(value) || 8)); },
     },
     loopSnap: {
       get: () => true,
@@ -141,7 +141,7 @@ const controller = (() => {
   let popupOffset    = 0;
   let popupCtxStart  = 0;
   let popupBpm       = 120;
-  let popupLoopBars  = 4;
+  let popupLoopBars  = 8;
   let popupLoopStart = 0;
   let popupLoopEnd   = 4;
   let popupZoomStart = 0;
@@ -169,7 +169,7 @@ const controller = (() => {
       popupVolume = clamp(state.volume, 0, 100);
       popupMuted = Boolean(state.muted);
       popupBpm = clamp(state.loopBpm || 120, 40, 300);
-      popupLoopBars = Math.max(1, Math.round(state.loopBars || 4));
+      popupLoopBars = Math.max(1, Math.round(state.loopBars || 8));
 
       if (audio) {
           try { audio.pause(); } catch (_) {}
@@ -288,7 +288,7 @@ const controller = (() => {
         <div class="loop-section-label">Loop Length</div>
         <div class="loop-bars-row">
           <div class="value-editor has-suffix loop-bars-editor">
-            <input class="value-input loop-bars-val" id="popup-bars-val" type="number" min="1" max="999" value="4" aria-label="Loop Length in Bars Value">
+            <input class="value-input loop-bars-val" id="popup-bars-val" type="number" min="1" max="999" value="8" aria-label="Loop Length in Bars Value">
             <span class="value-suffix loop-bars-unit" aria-hidden="true">Bars</span>
             <button class="value-stepper loop-bars-stepper" id="popup-bars-decr" type="button" aria-label="Decrease Loop Length">−</button>
             <button class="value-stepper loop-bars-stepper" id="popup-bars-incr" type="button" aria-label="Increase Loop Length">+</button>
@@ -1005,7 +1005,7 @@ const controller = (() => {
       const nextStart = clamp(Number(start) || 0, 0, duration);
       const nextEnd = clamp(Number(end) || duration, nextStart, duration);
       audioEngine.loopBpm = clamp(Number(popupBpm) || state.loopBpm || 120, 40, 300);
-      audioEngine.loopBars = Math.max(1, Math.round(Number(popupLoopBars) || 1));
+      audioEngine.loopBars = Math.max(1, Math.round(Number(popupLoopBars) || 8));
       audioEngine.setLoopRange(nextStart, nextEnd, nextEnd > nextStart);
       updateMainLoopButton();
   }

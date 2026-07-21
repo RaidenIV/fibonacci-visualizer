@@ -925,7 +925,7 @@ select:focus, input[type="text"]:focus { border-color: var(--accent); }
   gap: 7px;
 }
 
-.sidebar .loop-control > button.loop-active {
+.sidebar #loopButton.loop-active:not(:disabled) {
   border-color: rgba(74, 222, 128, 0.50);
   background: linear-gradient(135deg, rgba(74, 222, 128, 0.28), rgba(34, 197, 94, 0.18));
   color: #4ade80;
@@ -1692,10 +1692,18 @@ body.loop-editor-open {
   box-shadow: 0 7px 22px rgba(59, 130, 246, 0.32);
 }
 
-.sidebar .loop-control > button.loop-active {
-  border-color: rgba(74, 222, 128, 0.50);
-  background: linear-gradient(135deg, rgba(74, 222, 128, 0.28), rgba(34, 197, 94, 0.18));
-  color: #4ade80;
+.sidebar #loopButton.loop-active:not(:disabled) {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.13);
+  color: #22c55e;
+  box-shadow: none;
+}
+
+.sidebar #loopButton.loop-active:hover:not(:disabled) {
+  border-color: #4ade80;
+  background: rgba(34, 197, 94, 0.22);
+  color: #86efac;
+  box-shadow: none;
 }
 
 .sidebar .loop-status[data-tone="active"] {

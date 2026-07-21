@@ -186,7 +186,7 @@ export class AudioEngine extends EventTarget {
     this.loopEnd = 0;
     this.loopEnabled = false;
     this.loopBpm = 120;
-    this.loopBars = 4;
+    this.loopBars = 8;
     this.previewLoop = null;
     this.offlineFftSize = 2048;
     this.offlineFftReal = new Float64Array(this.offlineFftSize);
@@ -259,7 +259,7 @@ export class AudioEngine extends EventTarget {
     this.loopStart = 0;
     this.loopEnd = 0;
     this.loopBpm = 120;
-    this.loopBars = 4;
+    this.loopBars = 8;
     this.resetOfflineAnalysis();
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = URL.createObjectURL(file);
